@@ -651,6 +651,9 @@ pub struct ClipboardCard {
     can_merge_selection: bool,
     on_toolbar_action: Option<CardActionHandler>,
     on_double_click: Option<CardIndexHandler>,
+    /// When true, a left click fires `on_click` immediately (which pastes) and
+    /// `on_double_click` is never used.
+    single_click_paste: bool,
     /// Whether this card is in note-editing mode (shows inline editor).
     editing: bool,
     /// Shared InputState from ClipboardListView (only Some when editing is true).
@@ -680,6 +683,7 @@ impl ClipboardCard {
             can_merge_selection: false,
             on_toolbar_action: None,
             on_double_click: None,
+            single_click_paste: false,
             editing: false,
             note_input: None,
             on_commit_note: None,
@@ -733,6 +737,11 @@ impl ClipboardCard {
 
     pub fn on_double_click(mut self, handler: CardIndexHandler) -> Self {
         self.on_double_click = Some(handler);
+        self
+    }
+
+    pub fn single_click_paste(mut self, value: bool) -> Self {
+        self.single_click_paste = value;
         self
     }
 
@@ -794,6 +803,7 @@ impl RenderOnce for ClipboardCard {
             can_merge_selection,
             on_toolbar_action,
             on_double_click,
+            single_click_paste,
             editing,
             note_input,
             on_commit_note,
@@ -893,7 +903,13 @@ impl RenderOnce for ClipboardCard {
             base.cursor(CursorStyle::PointingHand).on_mouse_down(
                 MouseButton::Left,
                 move |ev, window, cx| {
-                    if ev.click_count == 2 {
+                    if single_click_paste {
+                        // --- Single-click paste mode: the first press already pasted, ---
+                        // --- so ignore the second press of a fast double-click.       ---
+                        if ev.click_count == 1 {
+                            handler(index, ev.modifiers, window, cx);
+                        }
+                    } else if ev.click_count == 2 {
                         // --- Double-click → paste ---
                         if let Some(ref dbl_handler) = double_click_handler {
                             dbl_handler(index, window, cx);

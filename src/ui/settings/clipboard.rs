@@ -31,6 +31,7 @@ impl SettingsPanel {
         let filter_foreign_paths = app.settings.filter_foreign_paths;
         let copy_sound_enabled = app.settings.copy_sound_enabled;
         let copy_sound_file = app.settings.copy_sound_file.clone();
+        let single_click_paste = app.settings.single_click_paste;
         // --- borrow released here — `app` is a &AppState reference ---
 
         let theme = self.theme.clone();
@@ -249,6 +250,27 @@ impl SettingsPanel {
                             )),
                     )
             })
+            // --- Single-click paste ---
+            .child(self.render_toggle_row(
+                I18nKey::SettingSingleClickPaste,
+                I18nKey::DescSingleClickPasteOn,
+                I18nKey::DescSingleClickPasteOff,
+                single_click_paste,
+                window,
+                cx,
+                |state, this, _window, _cx| {
+                    state.update(_cx, |s, _cx| {
+                        s.settings.single_click_paste = !s.settings.single_click_paste;
+                        s.settings.save();
+                    });
+                    this.update(_cx, |_panel, cx| {
+                        cx.emit(super::SettingsEvent::ClipboardSettingsChanged {
+                            reload_items: false,
+                            scroll_to_top: false,
+                        });
+                    });
+                },
+            ))
             // --- Sort by created ---
             .child(self.render_toggle_row(
                 I18nKey::SettingSortCreated,

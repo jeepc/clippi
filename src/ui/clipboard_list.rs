@@ -1382,6 +1382,7 @@ impl Render for ClipboardListView {
                                     show_source_app,
                                     show_original_on_hover,
                                     show_page_title,
+                                    single_click_paste,
                                     search_terms,
                                 ) = {
                                     let state = this.state.read(cx);
@@ -1389,6 +1390,7 @@ impl Render for ClipboardListView {
                                         state.settings.show_source_app,
                                         state.settings.show_original_on_hover,
                                         state.settings.auto_fetch_url_title,
+                                        state.settings.single_click_paste,
                                         state.filters.keyword_terms(),
                                     )
                                 };
@@ -1412,6 +1414,21 @@ impl Render for ClipboardListView {
                                                 // --- Clicking another card while editing → commit first ---
                                                 if this.editing_note_id > 0 {
                                                     this.commit_note_edit(window, cx);
+                                                }
+                                                if single_click_paste {
+                                                    // --- Mutually exclusive with multi-select: modifiers ---
+                                                    // --- carry no meaning here, every click pastes the   ---
+                                                    // --- clicked item with full formatting, like the     ---
+                                                    // --- double-click path does.                         ---
+                                                    this.select_index_without_scroll(idx, cx);
+                                                    if let Some(item) = this.items.get(idx) {
+                                                        let item_id = item.id;
+                                                        this.state.update(cx, |s, _cx| {
+                                                            s.paste_item(item_id, false);
+                                                        });
+                                                        this.sync_items_from_state_for_usage(cx);
+                                                    }
+                                                    return;
                                                 }
                                                 if additive_selection_modifier(modifiers) {
                                                     this.toggle_index(idx, cx);
@@ -1489,7 +1506,9 @@ impl Render for ClipboardListView {
                                                     move |ev: &MouseDownEvent, _window, cx| {
                                                         list_for_right.update(cx, |this, cx| {
                                                             #[cfg(target_os = "macos")]
-                                                            if macos_control_modifier_pressed() {
+                                                            if !single_click_paste
+                                                                && macos_control_modifier_pressed()
+                                                            {
                                                                 this.toggle_index(i, cx);
                                                                 return;
                                                             }
@@ -1542,6 +1561,7 @@ impl Render for ClipboardListView {
                                                     .theme(theme.clone())
                                                     .hovered(is_hovered)
                                                     .show_source_app(show_source_app)
+                                                    .single_click_paste(single_click_paste)
                                                     .show_original_on_hover(show_original_on_hover)
                                                     .show_page_title(show_page_title)
                                                     .image_cache(image_cache.clone())

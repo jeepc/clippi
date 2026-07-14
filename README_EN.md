@@ -54,9 +54,9 @@
 
 ![content1](./docs/images/content.png)
 
-- Double-click cards for quick paste
+- Click a card to paste (on by default; turn it off in Clips settings to go back to double-click)
 - Multi-type entry editing
-- Multi-select batch operations: Batch paste (newline-separated), batch favorite, batch delete, batch tag
+- Multi-select batch operations: Batch paste (newline-separated), batch favorite, batch delete, batch tag (requires "Click to paste" off)
 - Combined type filters: Freely mix multiple filter rules
 - Keyword search — matches both text content and tag names
 - Tag filtering — Switchable AND/OR logic across multiple tags
@@ -137,4 +137,4 @@ Clippi's quick paste feature requires Accessibility permission to simulate keyst
 2. Find **Clippi** in the list and enable the toggle
 3. If Clippi is not in the list, click the `+` button and add it manually from `/Applications/Clippi.app`
 
-> Without Accessibility permission, quick paste (double-click card / Enter key paste) will not work, but you can still copy and paste manually via the right-click menu.
+> Without Accessibility permission, quick paste (clicking a card / Enter key paste) will not work, but you can still copy and paste manually via the right-click menu.

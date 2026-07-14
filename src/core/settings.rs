@@ -162,6 +162,8 @@ pub struct AppSettings {
     pub cleanup_last_date: String, // last cleanup date "YYYY-MM-DD" for periodic scheduling
     #[serde(default)]
     pub always_reset_to_clipboard: bool, // always switch to clipboard history when window is shown
+    #[serde(default = "default_single_click_paste")]
+    pub single_click_paste: bool, // single-click a card to paste (mutually exclusive with multi-select)
     #[serde(default = "default_image_alt_mode")]
     pub image_alt_mode: String, // advanced paste mode for images: "bitmap" | "path" | "ocr"
 }
@@ -195,6 +197,10 @@ fn default_auto_fetch_url_title() -> bool {
 }
 
 fn default_copy_sound_enabled() -> bool {
+    true
+}
+
+fn default_single_click_paste() -> bool {
     true
 }
 
@@ -261,6 +267,7 @@ impl Default for AppSettings {
             cleanup_last_date: String::new(),
             always_reset_to_clipboard: false,
             image_alt_mode: default_image_alt_mode(),
+            single_click_paste: true,
         }
     }
 }
@@ -741,6 +748,21 @@ mod tests {
         let loaded: AppSettings = toml::from_str(&legacy_toml).unwrap();
 
         assert!(loaded.auto_fetch_url_title);
+    }
+
+    #[test]
+    fn missing_single_click_paste_defaults_to_enabled() {
+        let settings = AppSettings::default();
+        let toml = toml::to_string(&settings).unwrap();
+        let legacy_toml = toml
+            .lines()
+            .filter(|line| !line.starts_with("single_click_paste"))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let loaded: AppSettings = toml::from_str(&legacy_toml).unwrap();
+
+        assert!(loaded.single_click_paste);
     }
 
     fn bk(id: &str, name: &str) -> BackendConfig {
