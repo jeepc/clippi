@@ -55,8 +55,8 @@ impl ClippiTheme {
             text_2: rgb(0x919496),
             text_3: rgb(0x5f6264),
 
-            accent: rgb(0x7ecba3),
-            accent_soft: rgb(0x1a2e24),
+            accent: rgb(0xc0c1c3),
+            accent_soft: rgb(0x2c2d2e),
 
             fav_color: rgb(0xd8a155),
             danger: rgb(0xff5f57),
@@ -64,7 +64,7 @@ impl ClippiTheme {
             btn_hover: rgb(0x2b2c2d),
 
             tag_bg: rgb(0x2c2e2f),
-            tag_text: rgb(0xddf5e4),
+            tag_text: rgb(0xe0e1e3),
 
             panel_surface: rgb(0x2c2d2e),
             panel_input_bg: rgb(0x1e1f20),
@@ -85,8 +85,8 @@ impl ClippiTheme {
             text_2: rgb(0x7c809a),
             text_3: rgb(0xb4b9ca),
 
-            accent: rgb(0x6ab890),
-            accent_soft: rgb(0xe8f5ee),
+            accent: rgb(0x4a4b4d),
+            accent_soft: rgb(0xe8e9ec),
 
             fav_color: rgb(0xd8a155),
             danger: rgb(0xff5f57),
@@ -94,7 +94,7 @@ impl ClippiTheme {
             btn_hover: rgb(0xf0f1f8),
 
             tag_bg: rgb(0xe6e8f0),
-            tag_text: rgb(0x6c857c),
+            tag_text: rgb(0x6b6d75),
 
             panel_surface: rgb(0xffffff),
             panel_input_bg: rgb(0xf5f6fc),
@@ -118,9 +118,9 @@ impl ClippiTheme {
     /// Accent color as a 22% opacity overlay (used for active filter button backgrounds).
     pub fn accent_overlay(&self) -> Rgba {
         if self.bg == rgb(0x191a1b) {
-            rgba(0x7ecba322)
+            rgba(0xc0c1c322)
         } else {
-            rgba(0x6ab89022)
+            rgba(0x4a4b4d22)
         }
     }
 
@@ -128,9 +128,9 @@ impl ClippiTheme {
     /// overlay so short highlighted terms remain visible in dense previews.
     pub fn accent_highlight(&self) -> Rgba {
         if self.bg == rgb(0x191a1b) {
-            rgba(0x7ecba366)
+            rgba(0xc0c1c366)
         } else {
-            rgba(0x6ab8904d)
+            rgba(0x4a4b4d4d)
         }
     }
 

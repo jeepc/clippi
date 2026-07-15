@@ -313,12 +313,12 @@ impl Render for Sidebar {
 fn parse_tag_color(hex: &str) -> Rgba {
     let s = hex.trim_start_matches('#');
     if s.len() == 6 {
-        let r = u32::from_str_radix(&s[0..2], 16).unwrap_or(0x7e);
-        let g = u32::from_str_radix(&s[2..4], 16).unwrap_or(0xcb);
-        let b = u32::from_str_radix(&s[4..6], 16).unwrap_or(0xa3);
+        let r = u32::from_str_radix(&s[0..2], 16).unwrap_or(0x80);
+        let g = u32::from_str_radix(&s[2..4], 16).unwrap_or(0x82);
+        let b = u32::from_str_radix(&s[4..6], 16).unwrap_or(0x84);
         rgba((r << 24) | (g << 16) | (b << 8) | 0xff)
     } else {
-        rgb(0x7ecba3)
+        rgb(0x808284)
     }
 }
 
