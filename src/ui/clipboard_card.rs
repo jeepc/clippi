@@ -36,6 +36,11 @@ type CardIndexHandler = Rc<dyn Fn(usize, &mut Window, &mut App)>;
 type CardActionHandler = Rc<dyn Fn(&str, &mut Window, &mut App)>;
 type CardWindowHandler = Rc<dyn Fn(&mut Window, &mut App)>;
 
+// --- Clipboard content text sizes (enlarged for readability) ---
+const CONTENT_FONT_SIZE: f32 = 14.0;
+const CONTENT_LINE_HEIGHT: f32 = 21.0;
+const VALUE_FONT_SIZE: f32 = 15.0;
+
 const INFO_PILL_FONT_SIZE: f32 = 9.0;
 const INFO_PILL_GAP: f32 = 4.0;
 const INFO_PILL_BORDER_WIDTH: f32 = 1.0;
@@ -1265,7 +1270,7 @@ impl RenderOnce for ClipboardCard {
                             .focus_bordered(false)
                             .w_full()
                             .h_full()
-                            .text_size(px(12.))
+                            .text_size(px(CONTENT_FONT_SIZE))
                     }),
                 )
                 .child(
@@ -1314,7 +1319,7 @@ impl RenderOnce for ClipboardCard {
             div().flex_1().flex().items_center().child(
                 div()
                     .w_full()
-                    .text_size(px(12.))
+                    .text_size(px(CONTENT_FONT_SIZE))
                     .text_color(text_2)
                     .whitespace_nowrap()
                     .overflow_hidden()
@@ -1324,7 +1329,7 @@ impl RenderOnce for ClipboardCard {
                         text_2,
                         highlight_bg,
                         highlight_text,
-                        12.0,
+                        CONTENT_FONT_SIZE,
                         None,
                     )),
             )
@@ -1367,7 +1372,7 @@ impl RenderOnce for ClipboardCard {
                         .overflow_hidden()
                         .child(
                             div()
-                                .text_size(px(13.))
+                                .text_size(px(VALUE_FONT_SIZE))
                                 .font_weight(FontWeight::BOLD)
                                 .text_color(text_1)
                                 .child(search_highlight::render_highlighted_inline(
@@ -1376,27 +1381,27 @@ impl RenderOnce for ClipboardCard {
                                     text_1,
                                     highlight_bg,
                                     highlight_text,
-                                    13.0,
+                                    VALUE_FONT_SIZE,
                                     Some(FontWeight::BOLD),
                                 )),
                         )
                         .when(show_sep, |this| {
                             this.child(
                                 div()
-                                    .text_size(px(13.))
+                                    .text_size(px(VALUE_FONT_SIZE))
                                     .text_color(text_3)
                                     .mx(px(2.))
                                     .child(" - "),
                             )
                         })
-                        .child(div().text_size(px(13.)).text_color(text_3).child(
+                        .child(div().text_size(px(VALUE_FONT_SIZE)).text_color(text_3).child(
                             search_highlight::render_highlighted_auxiliary_inline(
                                 subtitle,
                                 &search_terms,
                                 text_3,
                                 highlight_bg,
                                 highlight_text,
-                                13.0,
+                                VALUE_FONT_SIZE,
                             ),
                         ))
                 } else {
@@ -1430,7 +1435,7 @@ impl RenderOnce for ClipboardCard {
                             .overflow_hidden()
                             .child(
                                 div()
-                                    .text_size(px(13.))
+                                    .text_size(px(VALUE_FONT_SIZE))
                                     .font_weight(FontWeight::BOLD)
                                     .text_color(label_color)
                                     .child(search_highlight::render_highlighted_inline(
@@ -1439,31 +1444,31 @@ impl RenderOnce for ClipboardCard {
                                         label_color,
                                         highlight_bg,
                                         highlight_text,
-                                        13.0,
+                                        VALUE_FONT_SIZE,
                                         Some(FontWeight::BOLD),
                                     )),
                             )
                             .child(
                                 div()
-                                    .text_size(px(13.))
+                                    .text_size(px(VALUE_FONT_SIZE))
                                     .text_color(text_3)
                                     .mx(px(2.))
                                     .child(" - "),
                             )
-                            .child(div().text_size(px(13.)).text_color(text_3).child(
+                            .child(div().text_size(px(VALUE_FONT_SIZE)).text_color(text_3).child(
                                 search_highlight::render_highlighted_auxiliary_inline(
                                     full,
                                     &search_terms,
                                     text_3,
                                     highlight_bg,
                                     highlight_text,
-                                    13.0,
+                                    VALUE_FONT_SIZE,
                                 ),
                             ))
                     } else {
                         div().flex_1().flex().items_center().child(
                             div()
-                                .text_size(px(13.))
+                                .text_size(px(VALUE_FONT_SIZE))
                                 .font_weight(FontWeight::BOLD)
                                 .text_color(label_color)
                                 .overflow_hidden()
@@ -1473,7 +1478,7 @@ impl RenderOnce for ClipboardCard {
                                     label_color,
                                     highlight_bg,
                                     highlight_text,
-                                    13.0,
+                                    VALUE_FONT_SIZE,
                                     Some(FontWeight::BOLD),
                                 )),
                         )
@@ -1491,7 +1496,7 @@ impl RenderOnce for ClipboardCard {
                 };
                 div().flex_1().flex().items_center().child(
                     div()
-                        .text_size(px(13.))
+                        .text_size(px(VALUE_FONT_SIZE))
                         .font_weight(FontWeight::BOLD)
                         .text_color(text_1)
                         .flex()
@@ -1504,13 +1509,13 @@ impl RenderOnce for ClipboardCard {
                             text_1,
                             highlight_bg,
                             highlight_text,
-                            13.0,
+                            VALUE_FONT_SIZE,
                             Some(FontWeight::BOLD),
                         ))
                         .when(masked.contains(mask_text), |this| {
                             this.child(
                                 div()
-                                    .text_size(px(13.))
+                                    .text_size(px(VALUE_FONT_SIZE))
                                     .font_weight(FontWeight::BOLD)
                                     .text_color(text_3)
                                     .child(mask_text),
@@ -1523,7 +1528,7 @@ impl RenderOnce for ClipboardCard {
                                 text_1,
                                 highlight_bg,
                                 highlight_text,
-                                13.0,
+                                VALUE_FONT_SIZE,
                                 Some(FontWeight::BOLD),
                             ))
                         }),
@@ -1531,7 +1536,7 @@ impl RenderOnce for ClipboardCard {
             } else if matches!(content_kind, DisplayKind::Color) {
                 div().flex_1().flex().items_center().child(
                     div()
-                        .text_size(px(12.))
+                        .text_size(px(CONTENT_FONT_SIZE))
                         .font_weight(FontWeight::BOLD)
                         .text_color(text_1)
                         .overflow_hidden()
@@ -1541,7 +1546,7 @@ impl RenderOnce for ClipboardCard {
                             text_1,
                             highlight_bg,
                             highlight_text,
-                            12.0,
+                            CONTENT_FONT_SIZE,
                             Some(FontWeight::BOLD),
                         )),
                 )
@@ -1661,9 +1666,9 @@ impl RenderOnce for ClipboardCard {
                         let content_box = div()
                             .flex_1()
                             .w_full()
-                            .text_size(px(12.))
+                            .text_size(px(CONTENT_FONT_SIZE))
                             .text_color(text_1)
-                            .line_height(px(18.))
+                            .line_height(px(CONTENT_LINE_HEIGHT))
                             .overflow_hidden();
 
                         let style = TextViewStyle::default()
@@ -1690,8 +1695,8 @@ impl RenderOnce for ClipboardCard {
                                         text_1,
                                         highlight_bg,
                                         highlight_text,
-                                        12.0,
-                                        18.0,
+                                        CONTENT_FONT_SIZE,
+                                        CONTENT_LINE_HEIGHT,
                                     ))
                                 }
                             }
@@ -1714,8 +1719,8 @@ impl RenderOnce for ClipboardCard {
                                         text_1,
                                         highlight_bg,
                                         highlight_text,
-                                        12.0,
-                                        18.0,
+                                        CONTENT_FONT_SIZE,
+                                        CONTENT_LINE_HEIGHT,
                                     ))
                                 }
                             }
@@ -1748,8 +1753,8 @@ impl RenderOnce for ClipboardCard {
                                                 text_1,
                                                 highlight_bg,
                                                 highlight_text,
-                                                12.0,
-                                                18.0,
+                                                CONTENT_FONT_SIZE,
+                                                CONTENT_LINE_HEIGHT,
                                             ),
                                         )
                                     }
@@ -1765,8 +1770,8 @@ impl RenderOnce for ClipboardCard {
                                         text_1,
                                         highlight_bg,
                                         highlight_text,
-                                        12.0,
-                                        18.0,
+                                        CONTENT_FONT_SIZE,
+                                        CONTENT_LINE_HEIGHT,
                                     ))
                                 }
                             }
