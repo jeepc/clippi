@@ -19,6 +19,8 @@ use crate::core::frontend::{
 use crate::core::i18n_keys::I18nKey;
 use crate::platform::focus::{start_focus_watcher, FocusWatcher};
 use crate::platform::hotkey::{create_hotkey_listener, HotkeyEvent, HotkeyListener, QuickAction};
+#[cfg(target_os = "windows")]
+use crate::platform::keyboard_hook;
 use crate::platform::monitor;
 use crate::platform::tray::{TrayAction, TrayManager};
 use crate::services::gpui_clipboard::GpuiClipboardService;
@@ -271,6 +273,25 @@ pub struct WindowManager {
     visible: bool,
     suppress_until: Option<Instant>,
 
+    /// True once the main window actually holds the OS focus.
+    ///
+    /// A hotkey-opened window is shown *without* activation so the app the user
+    /// is typing in keeps its caret; while `focus_taken` is false the window is
+    /// a floating popup fed by the low-level keyboard hook, and auto-hide can't
+    /// use "am I the foreground window?" (the answer is always no). Clicking the
+    /// window activates it normally and flips this to true. Tray-opened windows
+    /// start out activated.
+    #[cfg(target_os = "windows")]
+    focus_taken: bool,
+    /// Foreground window at the moment the popup was shown (i.e. the paste
+    /// target). Used to notice the user switching away (Alt+Tab) while the
+    /// popup is up, since we never hold the foreground ourselves.
+    #[cfg(target_os = "windows")]
+    shown_over_hwnd: isize,
+    /// Mouse-button state, so click-outside fires once per press.
+    #[cfg(target_os = "windows")]
+    main_mouse_down: bool,
+
     // --- Platform resources ---
     hotkey: Option<Box<dyn HotkeyListener>>,
     focus_watcher: Option<FocusWatcher>,
@@ -325,6 +346,11 @@ pub struct WindowManager {
     /// app/entity update so synchronous DPI callbacks can re-borrow GPUI.
     #[cfg(target_os = "windows")]
     _main_show_task: Option<Task<()>>,
+    /// Fast poll while the main window floats unfocused (16ms ≈ 60fps): keeps
+    /// the UI thread's key-state table fresh for the keyboard hook and handles
+    /// click-outside / switch-away dismissal.
+    #[cfg(target_os = "windows")]
+    _main_unfocused_poll_task: Option<Task<()>>,
     /// Fast poll for quick-action hotkeys when quick window is visible (16ms ≈ 60fps).
     _quick_poll_task: Option<Task<()>>,
     /// One-shot native positioning task. On Windows this must run outside an
@@ -383,6 +409,13 @@ impl WindowManager {
             // (WindowOptions { show: false }), so `visible` starts false.
             visible: !settings.silent_start,
             suppress_until: Some(Instant::now() + Duration::from_millis(SUPPRESS_DURATION_MS)),
+            // The window created at startup is a normal activated window.
+            #[cfg(target_os = "windows")]
+            focus_taken: true,
+            #[cfg(target_os = "windows")]
+            shown_over_hwnd: 0,
+            #[cfg(target_os = "windows")]
+            main_mouse_down: false,
             hotkey: None,
             focus_watcher,
             foreground_app_name,
@@ -414,6 +447,8 @@ impl WindowManager {
             _poll_task: None,
             #[cfg(target_os = "windows")]
             _main_show_task: None,
+            #[cfg(target_os = "windows")]
+            _main_unfocused_poll_task: None,
             _quick_poll_task: None,
             #[cfg(target_os = "windows")]
             _quick_position_task: None,
@@ -703,6 +738,18 @@ impl WindowManager {
         self.update_foreground_app_name(cx);
 
         let is_self_fg = self.is_self_foreground();
+
+        // While the window floats unfocused it is never the foreground window, so
+        // the guard below would hide it the moment the suppress period expires.
+        // `poll_unfocused` owns dismissal in that mode.
+        #[cfg(target_os = "windows")]
+        if self.visible && !self.focus_taken {
+            if is_self_fg {
+                // Something activated us anyway (a click, or a dialog we opened).
+                self.exit_floating_mode(cx);
+            }
+            return;
+        }
 
         // --- Auto-hide logic for main window ---
         // --- Guard conditions: any true → skip auto-hide ---
@@ -1164,11 +1211,22 @@ impl WindowManager {
 
     // --- Window operations (platform-specific) ---
 
-    /// Show the window, calculate position, and bring it to foreground.
+    /// Show the window and calculate its position.
     ///
-    /// When the window is already visible this only extends the suppress
-    /// period and brings the window to foreground — it skips repositioning
-    /// and item reload to avoid disrupting the current view.
+    /// On Windows a hotkey-triggered show deliberately does **not** take the
+    /// foreground: the window floats on top while the app the user was typing in
+    /// stays active and keeps its blinking caret (the same contract as the quick
+    /// window, and as Windows' own Win+V panel). Keystrokes are routed to it by
+    /// `platform::keyboard_hook` until the user clicks it, at which point it
+    /// activates normally and every native behaviour (IME, focus, auto-hide)
+    /// returns to what it was.
+    ///
+    /// Tray-triggered shows *do* activate — the user has already left their app
+    /// to click the tray, and the settings pages they land on need real focus
+    /// for text input.
+    ///
+    /// When the window is already visible this only extends the suppress period
+    /// — it skips repositioning and item reload to avoid disrupting the view.
     pub fn show_and_focus(&mut self, cx: &mut Context<Self>) {
         if self.quick_visible {
             self.hide_quick_window(cx);
@@ -1176,9 +1234,21 @@ impl WindowManager {
         self.suppress_until = Some(Instant::now() + Duration::from_millis(SUPPRESS_DURATION_MS));
 
         let was_already_visible = self.visible;
-        self.visible = true;
+
+        // Tray shows activate; hotkey shows float unfocused above the target app.
+        #[cfg(target_os = "windows")]
+        let activate = self.tray_triggered;
 
         if was_already_visible {
+            // Hotkey pressed while the floating popup is already up: it has no
+            // foreground to be raised to, so re-showing would be a dead key.
+            // Toggle it away instead, like the quick window does.
+            #[cfg(target_os = "windows")]
+            if !activate && !self.focus_taken {
+                self.hide(cx);
+                return;
+            }
+
             // --- Window is already open (e.g. user is in settings recording a ---
             // --- hotkey). Just bring to foreground without repositioning. ---
             #[cfg(target_os = "windows")]
@@ -1186,18 +1256,22 @@ impl WindowManager {
                 use windows_sys::Win32::UI::WindowsAndMessaging::SetForegroundWindow;
                 let hwnd = self.hwnd as *mut std::ffi::c_void;
                 if !hwnd.is_null() {
+                    // SAFETY: HWND is our own window.
                     unsafe { SetForegroundWindow(hwnd) };
                 }
+                self.exit_floating_mode(cx);
             }
             #[cfg(target_os = "macos")]
             {
                 cx.activate(true);
                 self.activate_macos_window();
             }
+            self.visible = true;
             cx.notify();
             return;
         }
 
+        self.visible = true;
         self.pinned = false;
         cx.emit(WindowManagerEvent::PinnedChanged(false));
 
@@ -1214,6 +1288,17 @@ impl WindowManager {
 
         #[cfg(target_os = "windows")]
         {
+            use windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
+
+            self.focus_taken = activate;
+            // SAFETY: `GetForegroundWindow` is a read-only query.
+            self.shown_over_hwnd = unsafe { GetForegroundWindow() } as isize;
+            self.main_mouse_down = Self::mouse_buttons_down();
+
+            if !activate {
+                self.start_unfocused_mode(cx);
+            }
+
             let hwnd = self.hwnd;
             let position = self.calculate_position();
             self._main_show_task = Some(cx.spawn(async move |weak_self, cx| {
@@ -1232,18 +1317,39 @@ impl WindowManager {
                 }
 
                 use windows_sys::Win32::UI::WindowsAndMessaging::{
-                    SetForegroundWindow, SetWindowPos, ShowWindow, HWND_TOP, SWP_NOACTIVATE,
-                    SWP_NOSIZE, SW_SHOW,
+                    SetForegroundWindow, SetWindowPos, ShowWindow, HWND_TOP, HWND_TOPMOST,
+                    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SW_SHOW,
                 };
                 let hwnd = hwnd as *mut std::ffi::c_void;
-                if let Some((x, y)) = position {
-                    unsafe {
-                        SetWindowPos(hwnd, HWND_TOP, x, y, 0, 0, SWP_NOACTIVATE | SWP_NOSIZE);
+
+                if activate {
+                    if let Some((x, y)) = position {
+                        // SAFETY: HWND is our own window; SWP_NOSIZE keeps its size.
+                        unsafe {
+                            SetWindowPos(hwnd, HWND_TOP, x, y, 0, 0, SWP_NOACTIVATE | SWP_NOSIZE);
+                        }
                     }
+                    // SAFETY: HWND is our own window.
+                    unsafe {
+                        ShowWindow(hwnd, SW_SHOW);
+                        SetForegroundWindow(hwnd);
+                    }
+                    return;
                 }
+
+                // Position + show + raise in one shot, without activating —
+                // `ShowWindow(SW_SHOW)` would steal the foreground. Topmost keeps
+                // the popup above the app it floats over (which stays active);
+                // `hide` / `exit_floating_mode` drop it back to non-topmost.
+                let (x, y) = position.unwrap_or((0, 0));
+                let flags = if position.is_some() {
+                    SWP_NOACTIVATE | SWP_NOSIZE | SWP_SHOWWINDOW
+                } else {
+                    SWP_NOACTIVATE | SWP_NOSIZE | SWP_SHOWWINDOW | SWP_NOMOVE
+                };
+                // SAFETY: HWND is our own window.
                 unsafe {
-                    ShowWindow(hwnd, SW_SHOW);
-                    SetForegroundWindow(hwnd);
+                    SetWindowPos(hwnd, HWND_TOPMOST, x, y, 0, 0, flags);
                 }
             }));
         }
@@ -1258,6 +1364,208 @@ impl WindowManager {
         }
 
         cx.notify();
+    }
+
+    /// Begin floating unfocused: hook the keyboard and start the fast poll that
+    /// keeps modifier state fresh and watches for click-outside / switch-away.
+    #[cfg(target_os = "windows")]
+    fn start_unfocused_mode(&mut self, cx: &mut Context<Self>) {
+        if self.hwnd == 0 {
+            return;
+        }
+
+        // A low-level hook sees keys before RegisterHotKey does; tell it to let
+        // the app's own hotkeys through so they keep toggling the window.
+        let hotkeys: Vec<String> = self
+            .hotkey
+            .as_ref()
+            .map(|hk| {
+                vec![
+                    hk.actual_main_hotkey().to_string(),
+                    hk.actual_quick_hotkey().to_string(),
+                ]
+            })
+            .unwrap_or_default();
+        keyboard_hook::set_passthrough_hotkeys(&hotkeys);
+        keyboard_hook::install(self.hwnd);
+        log::debug!(
+            "main window floating unfocused over hwnd {:#x}; keyboard hook installed",
+            self.shown_over_hwnd
+        );
+
+        self._main_unfocused_poll_task = Some(cx.spawn(async move |weak_self, cx| loop {
+            Timer::after(Duration::from_millis(16)).await;
+            let Some(this) = weak_self.upgrade() else {
+                break;
+            };
+            let running = this
+                .update(cx, |wm, cx| {
+                    if !wm.visible || wm.focus_taken {
+                        return false;
+                    }
+                    wm.poll_unfocused(cx);
+                    true
+                })
+                .unwrap_or(false);
+            if !running {
+                break;
+            }
+        }));
+    }
+
+    /// Stop floating: release the keyboard hook, stop the fast poll, and drop out
+    /// of the topmost band, so the window behaves like any ordinary window again.
+    ///
+    /// Called when the window takes real focus (the user clicked it) and also when
+    /// the user's attention leaves without the window hiding — in both cases we
+    /// must stop intercepting keys.
+    #[cfg(target_os = "windows")]
+    fn exit_floating_mode(&mut self, _cx: &mut Context<Self>) {
+        if self.focus_taken {
+            return;
+        }
+        self.focus_taken = true;
+        self.leave_unfocused_mode();
+    }
+
+    /// Tear down everything that only applies while floating unfocused.
+    #[cfg(target_os = "windows")]
+    fn leave_unfocused_mode(&mut self) {
+        if self._main_unfocused_poll_task.is_some() {
+            use windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
+            // SAFETY: read-only query.
+            let fg = unsafe { GetForegroundWindow() } as isize;
+            log::debug!(
+                "main window leaving unfocused mode; foreground is now {:#x} (was floating over {:#x})",
+                fg,
+                self.shown_over_hwnd
+            );
+        }
+        keyboard_hook::uninstall();
+        self._main_unfocused_poll_task = None;
+
+        // Drop out of the always-on-top band we showed in — unless the user
+        // pinned the window, which owns that state itself.
+        if self.pinned || self.hwnd == 0 {
+            return;
+        }
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            SetWindowPos, HWND_NOTOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+        };
+        // SAFETY: HWND is our own window. NOMOVE|NOSIZE|NOACTIVATE only changes Z-order.
+        unsafe {
+            SetWindowPos(
+                self.hwnd as *mut std::ffi::c_void,
+                HWND_NOTOPMOST,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE,
+            );
+        }
+    }
+
+    /// 16ms poll that runs only while the main window floats unfocused.
+    ///
+    /// Auto-hide can't ask "am I the foreground window?" here — we never take the
+    /// foreground — so dismissal is driven by a click outside the window or by the
+    /// user switching away from the app we're floating over (Alt+Tab, Start menu).
+    #[cfg(target_os = "windows")]
+    fn poll_unfocused(&mut self, cx: &mut Context<Self>) {
+        use windows_sys::Win32::Foundation::{POINT, RECT};
+        use windows_sys::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState;
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            GetCursorPos, GetForegroundWindow, GetWindowRect,
+        };
+
+        // GPUI resolves modifiers with GetKeyState, which reads *this* thread's
+        // key-state table — and the hook's posted messages never update it.
+        keyboard_hook::sync_thread_keyboard_state();
+
+        const VK_LBUTTON: i32 = 0x01;
+        const VK_RBUTTON: i32 = 0x02;
+        const VK_MBUTTON: i32 = 0x04;
+
+        // SAFETY: all of these are read-only queries on our own window / the
+        // global cursor and key state.
+        unsafe {
+            // Edge-detect the press, including clicks that begin and end between
+            // two ticks (the latched low bit).
+            let states = [VK_LBUTTON, VK_RBUTTON, VK_MBUTTON].map(|vkey| GetAsyncKeyState(vkey));
+            let mouse_down = states.iter().any(|state| (state & i16::MIN) != 0);
+            let pressed = states.iter().any(|state| (state & 0x0001) != 0)
+                || (mouse_down && !self.main_mouse_down);
+            self.main_mouse_down = mouse_down;
+
+            if self.is_suppressed() {
+                return;
+            }
+
+            if pressed {
+                let mut cursor = POINT { x: 0, y: 0 };
+                let mut rect = RECT {
+                    left: 0,
+                    top: 0,
+                    right: 0,
+                    bottom: 0,
+                };
+                let hwnd = self.hwnd as *mut std::ffi::c_void;
+                if GetCursorPos(&mut cursor) != 0 && GetWindowRect(hwnd, &mut rect) != 0 {
+                    let inside = cursor.x >= rect.left
+                        && cursor.x < rect.right
+                        && cursor.y >= rect.top
+                        && cursor.y < rect.bottom;
+                    if inside {
+                        // The click activates us (no WS_EX_NOACTIVATE), so hand the
+                        // window back to the native focus path.
+                        self.exit_floating_mode(cx);
+                    } else {
+                        self.dismiss_unfocused(cx);
+                    }
+                    return;
+                }
+            }
+
+            // The user switched away from the app we're floating over (Alt+Tab,
+            // Start menu, clicking a third app).
+            if self.shown_over_hwnd != 0 {
+                let fg = GetForegroundWindow() as isize;
+                if fg != 0
+                    && fg != self.shown_over_hwnd
+                    && fg != self.hwnd
+                    && !Self::is_own_process_window(fg)
+                {
+                    self.dismiss_unfocused(cx);
+                }
+            }
+        }
+    }
+
+    /// The user's attention moved elsewhere while the popup floated unfocused.
+    ///
+    /// Normally that hides the window. When it can't (auto-hide off, or pinned)
+    /// we must *still* let go of the keyboard: the hook swallows keys globally,
+    /// so a popup that lingers while the user types in another app would leave
+    /// them with a dead keyboard.
+    #[cfg(target_os = "windows")]
+    fn dismiss_unfocused(&mut self, cx: &mut Context<Self>) {
+        if self.auto_hide && !self.pinned {
+            self.hide(cx);
+        } else {
+            self.exit_floating_mode(cx);
+        }
+    }
+
+    /// Whether an HWND belongs to this process (our own dialogs, menus, toasts).
+    #[cfg(target_os = "windows")]
+    fn is_own_process_window(hwnd: isize) -> bool {
+        use windows_sys::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId;
+        let mut pid: u32 = 0;
+        // SAFETY: read-only query; returns 0 on failure.
+        let tid =
+            unsafe { GetWindowThreadProcessId(hwnd as *mut std::ffi::c_void, &mut pid) };
+        tid != 0 && pid == std::process::id()
     }
 
     #[allow(dead_code)]
@@ -1347,6 +1655,11 @@ impl WindowManager {
         #[cfg(target_os = "windows")]
         {
             self._main_show_task = None;
+            // Release the keyboard hook before the window goes away — it must
+            // never outlive the popup it feeds, or it would eat the user's keys.
+            self.leave_unfocused_mode();
+            self.focus_taken = true;
+            self.shown_over_hwnd = 0;
         }
         if self.quick_visible {
             self.hide_quick_window(cx);
@@ -1357,7 +1670,9 @@ impl WindowManager {
 
         #[cfg(target_os = "windows")]
         {
-            use windows_sys::Win32::UI::WindowsAndMessaging::{ShowWindow, SW_HIDE};
+            use windows_sys::Win32::UI::WindowsAndMessaging::{
+                SetWindowPos, SWP_HIDEWINDOW, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
+            };
 
             let hwnd = self.hwnd as *mut std::ffi::c_void;
 
@@ -1377,8 +1692,23 @@ impl WindowManager {
             }
 
             if !hwnd.is_null() {
-                // SAFETY: HWND is our own window. `ShowWindow(SW_HIDE)` hides it.
-                unsafe { ShowWindow(hwnd, SW_HIDE) };
+                // Hide with SWP_HIDEWINDOW rather than ShowWindow(SW_HIDE), for the
+                // same reason as the quick window: SW_HIDE reads as a minimise, and
+                // GPUI then restores without resizing its renderer. The unfocused
+                // show path raises the window with SWP_SHOWWINDOW, which — unlike
+                // SW_SHOW — would not clear that minimised state.
+                // SAFETY: HWND is our own window; the SWP_NO* flags mean this only hides it.
+                unsafe {
+                    SetWindowPos(
+                        hwnd,
+                        std::ptr::null_mut(),
+                        0,
+                        0,
+                        0,
+                        0,
+                        SWP_HIDEWINDOW | SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER,
+                    );
+                }
             }
         }
 

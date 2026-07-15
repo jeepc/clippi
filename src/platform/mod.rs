@@ -4,6 +4,7 @@ pub mod blacklist;
 pub mod clipboard;
 pub mod focus;
 pub mod hotkey;
+pub mod keyboard_hook;
 pub mod monitor;
 pub mod paste;
 pub mod source;

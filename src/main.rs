@@ -56,11 +56,19 @@ fn init_logging() {
         }
     }
     if let Ok(file) = std::fs::File::create(&log_path) {
-        let _ = simplelog::WriteLogger::init(
-            simplelog::LevelFilter::Info,
-            simplelog::Config::default(),
-            file,
-        );
+        // Debug builds also record our own debug!() lines. The allow-filter keeps
+        // out the dependency noise (ureq/rustls log every request at debug level).
+        let (level, config) = if cfg!(debug_assertions) {
+            (
+                simplelog::LevelFilter::Debug,
+                simplelog::ConfigBuilder::new()
+                    .add_filter_allow_str("clippi")
+                    .build(),
+            )
+        } else {
+            (simplelog::LevelFilter::Info, simplelog::Config::default())
+        };
+        let _ = simplelog::WriteLogger::init(level, config, file);
     }
 }
 
