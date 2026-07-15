@@ -257,25 +257,6 @@ impl Render for SettingsPanel {
             .rounded_b(px(12.))
             .bg(theme.bg)
             .track_focus(&focus_handle)
-            //  Navigation bar (height 36px, mt 8px matching Slint y=8px)
-            .child(
-                div()
-                    .flex()
-                    .flex_row()
-                    .items_center()
-                    .gap(px(8.))
-                    .h(px(36.))
-                    .px(px(8.))
-                    .mt(px(8.))
-                    // --- Title (14px, 700 weight, text_1) ---
-                    .child(
-                        div()
-                            .text_size(px(14.))
-                            .font_weight(FontWeight::BOLD)
-                            .text_color(theme.text_1)
-                            .child(I18nKey::SettingsTitle.text()),
-                    ),
-            )
             //  Tab bar (height 36px, mt 8px matching Slint spacing)
             .child(
                 div()
