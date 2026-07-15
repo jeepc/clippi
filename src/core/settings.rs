@@ -97,6 +97,10 @@ pub struct AppSettings {
     pub saved_window_width: f32, // user-adjusted window width (0=use default)
     #[serde(default)]
     pub saved_window_height: f32, // user-adjusted window height (0=use default)
+    #[serde(default)]
+    pub saved_settings_window_width: f32, // user-adjusted settings window width (0=use default)
+    #[serde(default)]
+    pub saved_settings_window_height: f32, // user-adjusted settings window height (0=use default)
     // --- ── Cloud sync ── ---
     #[serde(default)]
     pub sync_enabled: bool,
@@ -232,6 +236,8 @@ impl Default for AppSettings {
             show_original_on_hover: false,
             saved_window_width: 0.0,
             saved_window_height: 0.0,
+            saved_settings_window_width: 0.0,
+            saved_settings_window_height: 0.0,
             sync_enabled: false,
             sync_data_dir: String::new(),
             sync_device_name: String::new(),

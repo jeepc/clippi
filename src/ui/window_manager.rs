@@ -305,6 +305,11 @@ pub struct WindowManager {
     saved_w: f32,
     saved_h: f32,
 
+    // --- Settings window size cache (logical pixels). Position isn't remembered ---
+    // --- (it centers), only the user-resized width/height. ---
+    saved_settings_w: f32,
+    saved_settings_h: f32,
+
     // --- Hotkey blacklist ---
     blacklist: Vec<String>,
 
@@ -435,6 +440,8 @@ impl WindowManager {
             saved_y: settings.saved_window_y,
             saved_w: settings.saved_window_width,
             saved_h: settings.saved_window_height,
+            saved_settings_w: settings.saved_settings_window_width,
+            saved_settings_h: settings.saved_settings_window_height,
             blacklist: settings.hotkey_blacklist.clone(),
             recording_paste_shortcut_app: None,
             state,
@@ -580,6 +587,7 @@ impl WindowManager {
 
         // 7. Capture window geometry for persistence
         self.capture_window_geometry(cx);
+        self.capture_settings_window_geometry(cx);
 
         // --- 8. Cloud sync ---
         self.poll_sync(cx);
@@ -1039,10 +1047,98 @@ impl WindowManager {
         }
     }
 
+    /// Capture the settings window's current size and persist it, so a manual
+    /// resize survives close/reopen and restart. Only the width/height are
+    /// remembered — the settings window centers itself on show, so its position
+    /// is not stored. Runs only while the settings window is visible.
+    fn capture_settings_window_geometry(&mut self, cx: &mut Context<Self>) {
+        if !self.settings_visible {
+            return;
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            use windows_sys::Win32::Foundation::RECT;
+            use windows_sys::Win32::UI::HiDpi::GetDpiForWindow;
+            use windows_sys::Win32::UI::WindowsAndMessaging::{GetWindowRect, IsIconic};
+
+            if self.settings_hwnd == 0 {
+                return;
+            }
+            let hwnd = self.settings_hwnd as *mut std::ffi::c_void;
+
+            // While minimised, GetWindowRect reports off-screen / clamped values;
+            // capturing them would persist a bogus size. Skip until restored.
+            // SAFETY: settings HWND is our own window; read-only query.
+            if unsafe { IsIconic(hwnd) } != 0 {
+                return;
+            }
+
+            let mut rect = RECT {
+                left: 0,
+                top: 0,
+                right: 0,
+                bottom: 0,
+            };
+            // SAFETY: settings HWND is our own window; APIs only read it / write
+            // to the stack-allocated RECT.
+            let ok = unsafe { GetWindowRect(hwnd, &mut rect) };
+            if ok == 0 {
+                return;
+            }
+            let phys_w = rect.right - rect.left;
+            let phys_h = rect.bottom - rect.top;
+            if phys_w <= 0 || phys_h <= 0 {
+                return;
+            }
+
+            // SAFETY: settings HWND is our own window.
+            let dpi = unsafe { GetDpiForWindow(hwnd) } as f32;
+            let scale = if dpi > 0.0 { dpi / 96.0 } else { 1.0 };
+            let logical_w = phys_w as f32 / scale;
+            let logical_h = phys_h as f32 / scale;
+
+            let changed = (self.saved_settings_w - logical_w).abs() > 1.0
+                || (self.saved_settings_h - logical_h).abs() > 1.0;
+            if changed {
+                self.saved_settings_w = logical_w;
+                self.saved_settings_h = logical_h;
+                self.persist_settings_geometry(cx);
+            }
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            if self.settings_ns_window == 0 {
+                return;
+            }
+            let frame =
+                unsafe { (&*(self.settings_ns_window as *const objc2_app_kit::NSWindow)).frame() };
+            let logical_w = frame.size.width as f32;
+            let logical_h = frame.size.height as f32;
+            if logical_w <= 0.0 || logical_h <= 0.0 {
+                return;
+            }
+            let changed = (self.saved_settings_w - logical_w).abs() > 1.0
+                || (self.saved_settings_h - logical_h).abs() > 1.0;
+            if changed {
+                self.saved_settings_w = logical_w;
+                self.saved_settings_h = logical_h;
+                self.persist_settings_geometry(cx);
+            }
+        }
+
+        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+        {
+            let _ = cx;
+        }
+    }
+
     /// Prepare for graceful shutdown: save geometry, flush WAL,
     /// release platform resources.
     fn prepare_shutdown(&mut self, cx: &mut Context<Self>) {
         self.capture_window_geometry(cx);
+        self.capture_settings_window_geometry(cx);
         let (sx, sy, sw, sh) = (self.saved_x, self.saved_y, self.saved_w, self.saved_h);
         self.state.update(cx, |state, _cx| {
             if let Err(e) = state.db.checkpoint() {
@@ -2452,6 +2548,18 @@ impl WindowManager {
                 state.settings.saved_window_width = width;
                 state.settings.saved_window_height = height;
             }
+            state.settings.save();
+        });
+    }
+
+    fn persist_settings_geometry(&self, cx: &mut Context<Self>) {
+        let (width, height) = (self.saved_settings_w, self.saved_settings_h);
+        if width <= 0.0 || height <= 0.0 {
+            return;
+        }
+        self.state.update(cx, |state, _cx| {
+            state.settings.saved_settings_window_width = width;
+            state.settings.saved_settings_window_height = height;
             state.settings.save();
         });
     }

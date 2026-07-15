@@ -595,11 +595,12 @@ fn main() {
                 // --- top-level window. Created hidden; shown on demand from the ---
                 // --- titlebar gear button or the tray. Uses a native titlebar so ---
                 // --- close / minimise / drag work like an ordinary window. ---
-                // --- Width mirrors the history list window (effective_window_size, ---
-                // --- honouring the user's saved/resized width) so both windows match. ---
+                // --- Sized independently of the history list: its own saved ---
+                // --- width/height when the user has resized it, otherwise the ---
+                // --- compact portrait defaults (narrower than tall). ---
                 let (settings_win_w, settings_win_h) = {
                     let s = state.read(cx);
-                    core::frontend::effective_window_size(&s.settings)
+                    core::frontend::effective_settings_window_size(&s.settings)
                 };
                 let settings_options = WindowOptions {
                     titlebar: Some(TitlebarOptions {
@@ -649,8 +650,53 @@ fn main() {
                             raw_window_handle::HasWindowHandle::window_handle(settings_window)
                         {
                             if let RawWindowHandle::Win32(wh) = handle.as_raw() {
-                                settings_wm
-                                    .update(cx, |wm, _cx| wm.set_settings_hwnd(wh.hwnd.get()));
+                                let hwnd = wh.hwnd.get();
+                                settings_wm.update(cx, |wm, _cx| wm.set_settings_hwnd(hwnd));
+
+                                // GPUI does not reliably honor `window_bounds`
+                                // size for this secondary window on Windows (it
+                                // opens far wider than requested), so size and
+                                // center it explicitly — mirroring the main
+                                // window. The window is still hidden;
+                                // SWP_NOACTIVATE keeps it that way.
+                                let (anchor_x, anchor_y) =
+                                    platform::monitor::get_cursor_pos().unwrap_or((0, 0));
+                                let scale =
+                                    platform::monitor::get_scale_factor(anchor_x, anchor_y);
+                                let phys_w = (settings_win_w * scale).round() as i32;
+                                let phys_h = (settings_win_h * scale).round() as i32;
+                                let (pos_x, pos_y) =
+                                    platform::monitor::get_monitor_work_area(anchor_x, anchor_y)
+                                        .map(|area| {
+                                            (
+                                                area.x + (area.width - phys_w) / 2,
+                                                area.y + (area.height - phys_h) / 2,
+                                            )
+                                        })
+                                        .unwrap_or((anchor_x, anchor_y));
+                                cx.spawn(async move |_cx| {
+                                    // Yield so the open-window callback releases
+                                    // GPUI's AppCell borrow before the
+                                    // synchronous WM_SIZE/WM_DPICHANGED callbacks
+                                    // fire from SetWindowPos.
+                                    Timer::after(std::time::Duration::from_millis(1)).await;
+                                    use windows_sys::Win32::UI::WindowsAndMessaging::{
+                                        SetWindowPos, HWND_TOP, SWP_NOACTIVATE, SWP_NOZORDER,
+                                    };
+                                    // SAFETY: HWND is our own settings window.
+                                    unsafe {
+                                        SetWindowPos(
+                                            hwnd as _,
+                                            HWND_TOP,
+                                            pos_x,
+                                            pos_y,
+                                            phys_w,
+                                            phys_h,
+                                            SWP_NOACTIVATE | SWP_NOZORDER,
+                                        );
+                                    }
+                                })
+                                .detach();
                             }
                         }
                     }

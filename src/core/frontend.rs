@@ -14,6 +14,13 @@ pub const MIN_WINDOW_HEIGHT: f32 = 480.0;
 pub const MAX_WINDOW_WIDTH: f32 = 1200.0;
 pub const MAX_WINDOW_HEIGHT: f32 = 1200.0;
 
+/// Default settings window size (width, height) in logical pixels.
+/// Intentionally narrower than it is tall so the settings window opens in a
+/// compact portrait shape rather than inheriting the (often wide) history list
+/// width.
+pub const DEFAULT_SETTINGS_WINDOW_WIDTH: f32 = 600.0;
+pub const DEFAULT_SETTINGS_WINDOW_HEIGHT: f32 = 760.0;
+
 /// Content panel X offset from the window left edge (logical pixels).
 /// Matches the panel offset in `root.rs`.
 pub const PANEL_OFFSET_X: f32 = 36.0;
@@ -80,6 +87,31 @@ pub fn effective_window_size(settings: &crate::core::settings::AppSettings) -> (
             .clamp(MIN_WINDOW_HEIGHT, MAX_WINDOW_HEIGHT)
     } else {
         DEFAULT_WINDOW_HEIGHT
+    };
+    (w, h)
+}
+
+/// Compute effective settings-window dimensions from settings.
+///
+/// Uses the settings window's own saved dimensions when > 0 (clamped to the
+/// shared min/max range), otherwise returns the settings-window defaults —
+/// which are narrower than they are tall. Kept independent from the history
+/// list size so resizing one window never changes the other.
+/// Returns `(width, height)` in logical pixels.
+pub fn effective_settings_window_size(settings: &crate::core::settings::AppSettings) -> (f32, f32) {
+    let w = if settings.saved_settings_window_width > 0.0 {
+        settings
+            .saved_settings_window_width
+            .clamp(MIN_WINDOW_WIDTH, MAX_WINDOW_WIDTH)
+    } else {
+        DEFAULT_SETTINGS_WINDOW_WIDTH
+    };
+    let h = if settings.saved_settings_window_height > 0.0 {
+        settings
+            .saved_settings_window_height
+            .clamp(MIN_WINDOW_HEIGHT, MAX_WINDOW_HEIGHT)
+    } else {
+        DEFAULT_SETTINGS_WINDOW_HEIGHT
     };
     (w, h)
 }
