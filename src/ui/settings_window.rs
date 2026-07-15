@@ -116,10 +116,6 @@ impl SettingsWindowView {
         let settings_sub = cx.subscribe(
             &settings_panel,
             move |this, _panel, event: &SettingsEvent, cx| match event {
-                SettingsEvent::Back => {
-                    this.window_manager
-                        .update(cx, |wm, cx| wm.hide_settings_window(cx));
-                }
                 SettingsEvent::TabChanged(idx) => {
                     // When the user clicks the version tab manually, clear any
                     // existing update toast — the info is now on screen.

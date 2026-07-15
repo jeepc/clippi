@@ -595,6 +595,12 @@ fn main() {
                 // --- top-level window. Created hidden; shown on demand from the ---
                 // --- titlebar gear button or the tray. Uses a native titlebar so ---
                 // --- close / minimise / drag work like an ordinary window. ---
+                // --- Width mirrors the history list window (effective_window_size, ---
+                // --- honouring the user's saved/resized width) so both windows match. ---
+                let (settings_win_w, settings_win_h) = {
+                    let s = state.read(cx);
+                    core::frontend::effective_window_size(&s.settings)
+                };
                 let settings_options = WindowOptions {
                     titlebar: Some(TitlebarOptions {
                         title: Some("Clippi Settings".into()),
@@ -603,17 +609,11 @@ fn main() {
                     window_bounds: Some(WindowBounds::Windowed(Bounds::new(
                         Bounds::centered(
                             None,
-                            size(
-                                px(core::frontend::DEFAULT_WINDOW_WIDTH),
-                                px(core::frontend::DEFAULT_WINDOW_HEIGHT),
-                            ),
+                            size(px(settings_win_w), px(settings_win_h)),
                             cx,
                         )
                         .origin,
-                        size(
-                            px(core::frontend::DEFAULT_WINDOW_WIDTH),
-                            px(core::frontend::DEFAULT_WINDOW_HEIGHT),
-                        ),
+                        size(px(settings_win_w), px(settings_win_h)),
                     ))),
                     window_min_size: Some(size(
                         px(core::frontend::MIN_WINDOW_WIDTH),

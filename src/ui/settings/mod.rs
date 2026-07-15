@@ -1,7 +1,7 @@
 //! --- Settings panel — scrollable settings UI with tabs. ---
 //!
 //! --- Matches the original Slint `SettingsPanel.slint` layout: ---
-//! --- - Top navigation bar: back button (→ icon) + "Settings" title (36px) ---
+//! --- - Top navigation bar: "Settings" title (36px) ---
 //! --- - Tab bar: 5 equal-width tabs (General/Clipboard/Hotkey/Data/Sync) ---
 //!   with accent-green underline for active tab
 //! --- - Scrollable content area routed by active tab index ---
@@ -39,8 +39,6 @@ use crate::ui::window_manager::WindowManager;
 
 /// Events emitted by the settings panel.
 pub enum SettingsEvent {
-    /// User clicked the back button — return to clipboard view.
-    Back,
     /// Active tab changed — RootView should clear update toast when
     /// switching to the version tab (index 5).
     TabChanged(usize),
@@ -269,31 +267,6 @@ impl Render for SettingsPanel {
                     .h(px(36.))
                     .px(px(8.))
                     .mt(px(8.))
-                    // --- Back button (28x28, iconfont → ---
-                    .child(
-                        div()
-                            .w(px(28.))
-                            .h(px(28.))
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .cursor(CursorStyle::PointingHand)
-                            .on_mouse_down(MouseButton::Left, {
-                                let this = this.clone();
-                                move |_ev, _window, cx| {
-                                    this.update(cx, |_panel, cx| {
-                                        cx.emit(SettingsEvent::Back);
-                                    });
-                                }
-                            })
-                            .child(
-                                div()
-                                    .font_family("iconfont")
-                                    .text_size(px(16.))
-                                    .text_color(theme.text_2)
-                                    .child("\u{e62b}"),
-                            ),
-                    )
                     // --- Title (14px, 700 weight, text_1) ---
                     .child(
                         div()
