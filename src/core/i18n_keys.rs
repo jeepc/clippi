@@ -65,8 +65,6 @@ define_i18n! {
     SettingQuickWindow: ("快速粘贴窗口", "Quick Paste"),
     DescQuickWindow:    ("开启后可通过独立快捷键呼出精简窗口", "Use a separate quick paste hotkey"),
     QuickHotkeyLabel:   ("快速窗口快捷键", "Quick window hotkey"),
-    SettingAlwaysResetToClipboard: ("呼出窗口时回到首页", "Open clips on show"),
-    DescAlwaysResetToClipboard:   ("每次显示窗口时自动切换到剪贴板历史页面", "Show clipboard history when opened"),
 
     // ─── Theme options ───
     ThemeSystem:        ("跟随系统", "Auto"),

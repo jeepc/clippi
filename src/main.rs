@@ -23,6 +23,7 @@ use core::settings::AppSettings;
 use state::app::AppState;
 use ui::quick_paste::{calc_quick_window_height, QuickPasteView, QUICK_WINDOW_WIDTH};
 use ui::root::RootView;
+use ui::settings_window::SettingsWindowView;
 use ui::window_manager::WindowManager;
 
 fn is_restart() -> bool {
@@ -588,6 +589,99 @@ fn main() {
                     cx.new(|cx| gpui_component::Root::new(quick_view, quick_window, cx))
                 }) {
                     log::error!("Failed to create quick paste window: {err}");
+                }
+
+                // --- Settings window — a separate, normal (activated, resizable) ---
+                // --- top-level window. Created hidden; shown on demand from the ---
+                // --- titlebar gear button or the tray. Uses a native titlebar so ---
+                // --- close / minimise / drag work like an ordinary window. ---
+                let settings_options = WindowOptions {
+                    titlebar: Some(TitlebarOptions {
+                        title: Some("Clippi Settings".into()),
+                        ..Default::default()
+                    }),
+                    window_bounds: Some(WindowBounds::Windowed(Bounds::new(
+                        Bounds::centered(
+                            None,
+                            size(
+                                px(core::frontend::DEFAULT_WINDOW_WIDTH),
+                                px(core::frontend::DEFAULT_WINDOW_HEIGHT),
+                            ),
+                            cx,
+                        )
+                        .origin,
+                        size(
+                            px(core::frontend::DEFAULT_WINDOW_WIDTH),
+                            px(core::frontend::DEFAULT_WINDOW_HEIGHT),
+                        ),
+                    ))),
+                    window_min_size: Some(size(
+                        px(core::frontend::MIN_WINDOW_WIDTH),
+                        px(core::frontend::MIN_WINDOW_HEIGHT),
+                    )),
+                    show: false,
+                    focus: false,
+                    kind: WindowKind::Normal,
+                    is_movable: true,
+                    is_resizable: true,
+                    is_minimizable: true,
+                    ..Default::default()
+                };
+                let settings_state = state.clone();
+                let settings_wm = window_manager.clone();
+                if let Err(err) = cx.open_window(settings_options, move |settings_window, cx| {
+                    let settings_view = cx.new(|cx| {
+                        SettingsWindowView::new(
+                            settings_window,
+                            settings_state.clone(),
+                            settings_wm.clone(),
+                            cx,
+                        )
+                    });
+                    let settings_handle = gpui::Window::window_handle(settings_window);
+                    settings_wm.update(cx, |wm, cx| {
+                        wm.set_settings_window(settings_handle, settings_view.clone(), cx);
+                    });
+
+                    #[cfg(target_os = "windows")]
+                    {
+                        if let Ok(handle) =
+                            raw_window_handle::HasWindowHandle::window_handle(settings_window)
+                        {
+                            if let RawWindowHandle::Win32(wh) = handle.as_raw() {
+                                settings_wm
+                                    .update(cx, |wm, _cx| wm.set_settings_hwnd(wh.hwnd.get()));
+                            }
+                        }
+                    }
+
+                    #[cfg(target_os = "macos")]
+                    {
+                        if let Ok(handle) =
+                            raw_window_handle::HasWindowHandle::window_handle(settings_window)
+                        {
+                            if let RawWindowHandle::AppKit(wh) = handle.as_raw() {
+                                let ns_view =
+                                    wh.ns_view.as_ptr() as *mut objc2::runtime::AnyObject;
+                                let ns_window: *mut objc2_app_kit::NSWindow =
+                                    unsafe { objc2::msg_send![ns_view, window] };
+                                settings_wm.update(cx, |wm, _cx| {
+                                    wm.set_settings_ns_window(ns_window as isize)
+                                });
+                            }
+                        }
+                    }
+
+                    // Close = hide (never destroy), consistent with the main window.
+                    let settings_wm_close = settings_wm.clone();
+                    settings_window.on_window_should_close(cx, move |_w, cx| {
+                        settings_wm_close.update(cx, |wm, cx| wm.hide_settings_window(cx));
+                        false
+                    });
+
+                    cx.new(|cx| gpui_component::Root::new(settings_view, settings_window, cx))
+                }) {
+                    log::error!("Failed to create settings window: {err}");
                 }
 
                 // Defer startup actions until GPUI has completed the first render.

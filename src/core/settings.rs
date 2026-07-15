@@ -160,8 +160,6 @@ pub struct AppSettings {
     pub cleanup_interval: String, // cache cleanup frequency: "daily" | "weekly" | "never"
     #[serde(default)]
     pub cleanup_last_date: String, // last cleanup date "YYYY-MM-DD" for periodic scheduling
-    #[serde(default)]
-    pub always_reset_to_clipboard: bool, // always switch to clipboard history when window is shown
     #[serde(default = "default_single_click_paste")]
     pub single_click_paste: bool, // single-click a card to paste (mutually exclusive with multi-select)
     #[serde(default = "default_image_alt_mode")]
@@ -265,7 +263,6 @@ impl Default for AppSettings {
             filter_foreign_paths: false,
             cleanup_interval: default_cleanup_interval(),
             cleanup_last_date: String::new(),
-            always_reset_to_clipboard: false,
             image_alt_mode: default_image_alt_mode(),
             single_click_paste: true,
         }

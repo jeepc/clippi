@@ -31,8 +31,6 @@ use super::components::toast::Toast;
 use super::context_menu::{ContextMenu, MenuItemContext};
 use super::edit_panel::{EditPanel, EditPanelEvent};
 use super::search_bar::SearchBar;
-use super::settings::hotkey;
-use super::settings::{SettingsEvent, SettingsPanel};
 use super::sidebar::Sidebar;
 use super::tag_filter::{render_edit_panel, TagFilterPanel};
 use super::tag_picker::TagPickerPanel;
@@ -46,7 +44,6 @@ pub struct RootView {
     titlebar: Entity<Titlebar>,
     list_view: Entity<ClipboardListView>,
     search_bar: Entity<SearchBar>,
-    settings_panel: Entity<SettingsPanel>,
     edit_panel: Entity<EditPanel>,
     sidebar: Entity<Sidebar>,
     tag_filter_panel: Entity<TagFilterPanel>,
@@ -113,15 +110,6 @@ impl RootView {
         list_view.update(cx, |list, _cx| {
             list.search_bar = Some(search_bar.clone());
         });
-        let settings_panel = cx.new(|cx| {
-            SettingsPanel::new(
-                state.clone(),
-                window_manager.clone(),
-                theme.clone(),
-                window,
-                cx,
-            )
-        });
         let edit_panel = cx.new(|cx| EditPanel::new(state.clone(), theme.clone(), window, cx));
         let sidebar = cx.new(|_cx| Sidebar::new(state.clone(), list_view.clone(), &theme));
         let tag_filter_panel = cx.new(|cx| {
@@ -155,55 +143,46 @@ impl RootView {
                         .update(cx, |tb, cx| tb.set_pinned(*pinned, cx));
                     cx.notify();
                 }
-                WindowManagerEvent::OpenSettings => {
-                    this.switch_view("settings");
-                    this.search_bar
-                        .update(cx, |bar, cx| bar.close_tag_panel(cx));
+                WindowManagerEvent::SettingsThemeChanged(theme_str) => {
+                    // --- The settings window changed the theme; re-derive our ---
+                    // --- ClippiTheme and re-apply it to the main window's views. ---
+                    // --- (gpui_component's global Theme is already updated there.) ---
+                    this.theme =
+                        ClippiTheme::from_setting(theme_str, Some(this.window_appearance));
+                    let theme = this.theme.clone();
+                    this.titlebar.update(cx, |titlebar, cx| {
+                        titlebar.set_theme(theme.clone(), cx);
+                    });
+                    this.search_bar.update(cx, |search_bar, cx| {
+                        search_bar.set_theme(theme.clone(), cx);
+                    });
+                    this.list_view.update(cx, |list_view, cx| {
+                        list_view.set_theme(theme.clone(), cx);
+                    });
+                    this.edit_panel.update(cx, |panel, cx| {
+                        panel.set_theme(theme.clone(), cx);
+                    });
+                    this.sidebar.update(cx, |sidebar, cx| {
+                        sidebar.set_theme(&theme, cx);
+                    });
                     cx.notify();
                 }
-                WindowManagerEvent::OpenVersionSettings => {
-                    // Clear any existing update toast — the version info is now
-                    // visible on screen and a redundant toast is distracting.
-                    if this.toast_actions.is_some() {
-                        this._toast_timer = None;
-                        this.toast_timer_expiry = None;
-                        this.toast_actions = None;
-                        this.state.update(cx, |s, _cx| s.clear_toast());
+                WindowManagerEvent::SettingsClipboardChanged {
+                    reload_items,
+                    scroll_to_top,
+                } => {
+                    if *reload_items {
+                        this.state.update(cx, |state, _cx| state.reload_items());
+                        let items = this.state.read(cx).items.clone();
+                        this.list_view.update(cx, |list_view, cx| {
+                            list_view.refresh_settings_from_state(*scroll_to_top, cx);
+                            list_view.set_items(items, cx);
+                        });
+                    } else {
+                        this.list_view.update(cx, |list_view, cx| {
+                            list_view.refresh_settings_from_state(*scroll_to_top, cx);
+                        });
                     }
-                    this.switch_view("settings");
-                    this.settings_panel
-                        .update(cx, |panel, _cx| panel.set_active_tab(5));
-                    this.search_bar
-                        .update(cx, |bar, cx| bar.close_tag_panel(cx));
-                    cx.notify();
-                }
-                WindowManagerEvent::HotkeyRecordingComplete => {
-                    // --- Notify SettingsPanel so it re-renders with the updated ---
-                    // --- hotkey display and recording state from AppState. ---
-                    this.settings_panel.update(cx, |_panel, cx| {
-                        cx.notify();
-                    });
-                }
-                WindowManagerEvent::SyncChanged => {
-                    this.settings_panel.update(cx, |_panel, cx| {
-                        cx.notify();
-                    });
-                    cx.notify();
-                }
-                WindowManagerEvent::PasteShortcutRecorded { app_name, shortcut } => {
-                    this.settings_panel.update(cx, |panel, cx| {
-                        panel.recording_paste_shortcut = None;
-                        cx.emit(SettingsEvent::ShowHotkeyConfirm(
-                            hotkey::HotkeyConfirmAction::AddPasteShortcut {
-                                app_name: app_name.clone(),
-                                shortcut: shortcut.clone(),
-                            },
-                        ));
-                    });
-                    cx.notify();
-                }
-                WindowManagerEvent::ResetToClipboard => {
-                    this.switch_view("clipboard");
                     cx.notify();
                 }
                 WindowManagerEvent::WindowHidden => {
@@ -221,9 +200,9 @@ impl RootView {
                 }
                 WindowManagerEvent::UpdateAvailable => {
                     // Don't show the toast when the user is already looking at
-                    // the version tab — the update info is right there on screen.
-                    let on_version_tab = this.current_view == "settings"
-                        && this.settings_panel.read(cx).active_tab() == 5;
+                    // the version tab in the settings window.
+                    let on_version_tab =
+                        this.window_manager.read(cx).is_settings_on_version_tab(cx);
                     if on_version_tab {
                         // AppState.update_available was already set by poll_update;
                         // notify so the version tab re-renders with the latest info.
@@ -273,9 +252,9 @@ impl RootView {
                 }
                 WindowManagerEvent::UpdateProgress(phase) => {
                     // Don't show the toast when the user is already looking at
-                    // the version tab — the update progress is right there on screen.
-                    let on_version_tab = this.current_view == "settings"
-                        && this.settings_panel.read(cx).active_tab() == 5;
+                    // the version tab in the settings window.
+                    let on_version_tab =
+                        this.window_manager.read(cx).is_settings_on_version_tab(cx);
                     if on_version_tab {
                         // AppState.update_phase was already set by poll_update
                         // or start_update_check; notify so the version tab
@@ -365,12 +344,15 @@ impl RootView {
                         cx.notify();
                     }
                 }
+                // --- Handled by the settings window, not the main window. ---
+                WindowManagerEvent::HotkeyRecordingComplete
+                | WindowManagerEvent::SyncChanged
+                | WindowManagerEvent::PasteShortcutRecorded { .. } => {}
             },
         );
 
         let wm = window_manager.clone();
         let titlebar_for_events = titlebar.clone();
-        let backend_panel = settings_panel.read(cx).backend_panel();
         let _subscriptions = vec![
             cx.observe(&search_bar, |_this, _, cx| {
                 cx.notify();
@@ -379,9 +361,6 @@ impl RootView {
                 cx.notify();
             }),
             cx.observe(&type_filter_config_panel, |_this, _, cx| {
-                cx.notify();
-            }),
-            cx.observe(&backend_panel, |_this, _, cx| {
                 cx.notify();
             }),
             cx.subscribe(
@@ -436,148 +415,10 @@ impl RootView {
                         cx.notify();
                     }
                     TitlebarEvent::OpenSettings => {
-                        this.switch_view("settings");
+                        this.window_manager
+                            .update(cx, |wm, cx| wm.show_settings_window(cx));
                         this.search_bar
                             .update(cx, |bar, cx| bar.close_tag_panel(cx));
-                        cx.notify();
-                    }
-                },
-            ),
-            cx.subscribe(
-                &settings_panel,
-                move |this, _panel, event: &SettingsEvent, cx| match event {
-                    SettingsEvent::Back => {
-                        this.switch_view("clipboard");
-                        cx.notify();
-                    }
-                    SettingsEvent::TabChanged(idx) => {
-                        // When the user clicks the version tab manually, clear
-                        // any existing update toast — the info is now on screen.
-                        if *idx == 5 && this.toast_actions.is_some() {
-                            this._toast_timer = None;
-                            this.toast_timer_expiry = None;
-                            this.toast_actions = None;
-                            this.state.update(cx, |s, _cx| s.clear_toast());
-                            cx.notify();
-                        }
-                    }
-                    SettingsEvent::ThemeChanged(theme_str) => {
-                        // --- Use cached window_appearance from creation time so ---
-                        // --- "system" theme resolves correctly even though we ---
-                        // --- only have &mut App here (not WindowContext). ---
-                        this.theme =
-                            ClippiTheme::from_setting(theme_str, Some(this.window_appearance));
-                        let theme = this.theme.clone();
-
-                        // --- Sync gpui_component theme so that Input, Scrollbar ---
-                        // --- and other gpui_component widgets follow our theme. ---
-                        let is_dark = theme.bg == rgb(0x191a1b);
-                        gpui_component::Theme::change(
-                            if is_dark {
-                                gpui_component::ThemeMode::Dark
-                            } else {
-                                gpui_component::ThemeMode::Light
-                            },
-                            None,
-                            cx,
-                        );
-                        // --- Must restore transparent background after Theme::change ---
-                        // --- resets it — otherwise the window loses transparency. ---
-                        gpui_component::Theme::global_mut(cx).background =
-                            Hsla::transparent_black();
-
-                        this.titlebar.update(cx, |titlebar, cx| {
-                            titlebar.set_theme(theme.clone(), cx);
-                        });
-                        this.search_bar.update(cx, |search_bar, cx| {
-                            search_bar.set_theme(theme.clone(), cx);
-                        });
-                        this.list_view.update(cx, |list_view, cx| {
-                            list_view.set_theme(theme.clone(), cx);
-                        });
-                        this.settings_panel.update(cx, |panel, cx| {
-                            panel.reload_theme(theme.clone(), cx);
-                        });
-                        this.edit_panel.update(cx, |panel, cx| {
-                            panel.set_theme(theme.clone(), cx);
-                        });
-                        this.sidebar.update(cx, |sidebar, cx| {
-                            sidebar.set_theme(&theme, cx);
-                        });
-                        cx.notify();
-                    }
-                    SettingsEvent::ClipboardSettingsChanged {
-                        reload_items,
-                        scroll_to_top,
-                    } => {
-                        if *reload_items {
-                            this.state.update(cx, |state, _cx| state.reload_items());
-                            let items = this.state.read(cx).items.clone();
-                            this.list_view.update(cx, |list_view, cx| {
-                                list_view.refresh_settings_from_state(*scroll_to_top, cx);
-                                list_view.set_items(items, cx);
-                            });
-                        } else {
-                            this.list_view.update(cx, |list_view, cx| {
-                                list_view.refresh_settings_from_state(*scroll_to_top, cx);
-                            });
-                        }
-                        cx.notify();
-                    }
-                    SettingsEvent::ShowHotkeyConfirm(action) => {
-                        this.settings_panel.update(cx, |panel, _cx| {
-                            panel.hotkey_confirm = Some(action.clone());
-                        });
-                        cx.notify();
-                    }
-                    SettingsEvent::HotkeyPasteShortcut { ref action } => {
-                        match action {
-                            hotkey::HotkeyConfirmAction::AddPasteShortcut {
-                                app_name,
-                                shortcut,
-                            } => {
-                                let mut list = this.state.read(cx).settings.paste_shortcuts.clone();
-                                // Remove existing entry for same app (overwrite)
-                                list.retain(|e| e.app_name != *app_name);
-                                list.push(crate::core::settings::PasteShortcutEntry {
-                                    app_name: app_name.clone(),
-                                    shortcut: shortcut.clone(),
-                                });
-                                this.state.update(cx, |s, _cx| {
-                                    s.settings.paste_shortcuts = list;
-                                    s.settings.save();
-                                });
-                                this.settings_panel.update(cx, |panel, cx| {
-                                    panel.clear_paste_shortcut_state(cx);
-                                    panel.clear_hotkey_confirm(cx);
-                                });
-                            }
-                            hotkey::HotkeyConfirmAction::RemovePasteShortcut { app_name } => {
-                                let mut list = this.state.read(cx).settings.paste_shortcuts.clone();
-                                list.retain(|e| e.app_name != *app_name);
-                                this.state.update(cx, |s, _cx| {
-                                    s.settings.paste_shortcuts = list;
-                                    s.settings.save();
-                                });
-                                this.settings_panel.update(cx, |panel, cx| {
-                                    panel.clear_paste_shortcut_state(cx);
-                                    panel.clear_hotkey_confirm(cx);
-                                });
-                            }
-                            _ => {}
-                        }
-                        cx.notify();
-                    }
-                    SettingsEvent::DataError(msg) => {
-                        this.state.update(cx, |s, _cx| {
-                            s.toast_message = Some(format!("{}: {msg}", I18nKey::ErrDataOp.text()));
-                        });
-                        cx.notify();
-                    }
-                    SettingsEvent::DataToast(msg) => {
-                        this.state.update(cx, |s, _cx| {
-                            s.toast_message = Some(msg.clone());
-                        });
                         cx.notify();
                     }
                 },
@@ -621,8 +462,6 @@ impl RootView {
                 .update(cx, |sb, cx| sb.set_theme(theme.clone(), cx));
             this.list_view
                 .update(cx, |lv, cx| lv.set_theme(theme.clone(), cx));
-            this.settings_panel
-                .update(cx, |sp, cx| sp.reload_theme(theme.clone(), cx));
             this.edit_panel
                 .update(cx, |ep, cx| ep.set_theme(theme.clone(), cx));
             this.sidebar.update(cx, |sb, cx| sb.set_theme(&theme, cx));
@@ -636,7 +475,6 @@ impl RootView {
             titlebar,
             list_view,
             search_bar,
-            settings_panel,
             edit_panel,
             sidebar,
             tag_filter_panel,
@@ -671,14 +509,10 @@ impl Render for RootView {
         let titlebar = self.titlebar.clone();
         let list_view = self.list_view.clone();
         let search_bar = self.search_bar.clone();
-        let settings_panel = self.settings_panel.clone();
-        let backend_panel = self.settings_panel.read(cx).backend_panel();
-        let backend_panel_open = backend_panel.read(cx).is_visible();
         let edit_panel = self.edit_panel.clone();
         let tag_filter_panel = self.tag_filter_panel.clone();
         let tag_panel_open = self.search_bar.read(cx).tag_panel_open();
         let is_clipboard = self.current_view == "clipboard";
-        let is_settings = self.current_view == "settings";
         let is_edit = self.current_view == "edit";
         let theme = self.theme.clone();
         let panel_border = if theme.bg == rgb(0x191a1b) {
@@ -701,7 +535,6 @@ impl Render for RootView {
         let context_menu_open = self.list_view.read(cx).context_menu_visible();
         let tag_picker_open = self.list_view.read(cx).tag_picker_visible();
         let confirm_dialog_open = self.list_view.read(cx).confirm_dialog_state().is_some();
-        let hotkey_confirm_open = self.settings_panel.read(cx).hotkey_confirm.is_some();
 
         let editing_tag_visible = {
             let app_state = self.state.read(cx);
@@ -722,8 +555,6 @@ impl Render for RootView {
         let context_menu_visible = context_menu_open && is_clipboard;
         let tag_picker_visible = tag_picker_open && is_clipboard;
         let confirm_dialog_visible = confirm_dialog_open && is_clipboard;
-        let hotkey_confirm_visible = is_settings && hotkey_confirm_open;
-        let backend_panel_visible = is_settings && backend_panel_open;
 
         let view_animating =
             Self::animation_running(self.view_transition_started, VIEW_ANIM_DURATION);
@@ -760,8 +591,6 @@ impl Render for RootView {
         let context_menu_gen = self.overlay_generation("context-menu", context_menu_visible);
         let tag_picker_gen = self.overlay_generation("tag-picker", tag_picker_visible);
         let confirm_dialog_gen = self.overlay_generation("confirm-dialog", confirm_dialog_visible);
-        let hotkey_confirm_gen = self.overlay_generation("hotkey-confirm", hotkey_confirm_visible);
-        let backend_panel_gen = self.overlay_generation("backend-panel", backend_panel_visible);
 
         let tag_panel_animating = self.overlay_animating("tag-filter");
         let filter_config_animating = self.overlay_animating("type-filter-config");
@@ -769,8 +598,6 @@ impl Render for RootView {
         let context_menu_animating = self.overlay_animating("context-menu");
         let tag_picker_animating = self.overlay_animating("tag-picker");
         let _confirm_dialog_animating = self.overlay_animating("confirm-dialog");
-        let _hotkey_confirm_animating = self.overlay_animating("hotkey-confirm");
-        let backend_panel_animating = self.overlay_animating("backend-panel");
 
         let tag_panel_opacity = if tag_panel_visible && tag_panel_animating {
             Self::overlay_opacity(window, cx, tag_panel_gen, "tag-filter")
@@ -821,11 +648,6 @@ impl Render for RootView {
             Self::overlay_offset(window, cx, tag_picker_gen, "tag-picker")
         } else {
             0.0
-        };
-        let backend_panel_opacity = if backend_panel_visible && backend_panel_animating {
-            Self::overlay_opacity(window, cx, backend_panel_gen, "backend-panel")
-        } else {
-            1.0
         };
 
         // --- Auto-focus and clear search bar when the window opens ---
@@ -921,7 +743,6 @@ impl Render for RootView {
         let root_this = cx.entity().clone();
         let root_list = list_view.clone();
         let root_state = self.state.clone();
-        let root_backend = backend_panel.clone();
 
         div()
             .relative()
@@ -931,21 +752,8 @@ impl Render for RootView {
                 if ev.keystroke.key.as_str() != "escape" {
                     return;
                 }
-                let is_settings = root_this.read(cx).current_view == "settings";
                 let is_edit = root_this.read(cx).current_view == "edit";
-                if is_settings {
-                    // Close backend panel popup first, then go back to clipboard
-                    if root_backend.read(cx).is_visible() {
-                        root_backend.update(cx, |panel, cx| panel.close(cx));
-                    } else {
-                        root_this.update(cx, |this, cx| {
-                            this.switch_view("clipboard");
-                            cx.notify();
-                        });
-                        root_list.update(cx, |list, _cx| list.focus(window));
-                    }
-                    cx.stop_propagation();
-                } else if is_edit {
+                if is_edit {
                     root_state.update(cx, |state, _cx| state.cancel_edit_item());
                     root_this.update(cx, |this, cx| {
                         this.switch_view("clipboard");
@@ -995,7 +803,6 @@ impl Render for RootView {
                             .when(is_clipboard, |view| {
                                 view.child(search_bar.clone()).child(list_view.clone())
                             })
-                            .when(is_settings, |view| view.child(settings_panel))
                             .when(is_edit, |view| view.child(edit_panel)),
                     ),
             )
@@ -1330,172 +1137,6 @@ impl Render for RootView {
                         .top(px(0.))
                         .bottom(px(0.))
                         .child(dialog_element),
-                )
-            })
-            // --- Settings hotkey blacklist ConfirmDialog ---
-            .when(hotkey_confirm_visible, |root| {
-                let dialog_focus = cx.focus_handle();
-                let settings = self.settings_panel.clone();
-                let wm = self.window_manager.clone();
-                let app_state = self.state.clone();
-
-                let action = settings.read(cx).hotkey_confirm.clone();
-                let dialog_element: AnyElement = match action {
-                    Some(hotkey::HotkeyConfirmAction::AddBlacklist { app_name }) => {
-                        ConfirmDialog::add_blacklist(&app_name)
-                            .theme(self.theme.clone())
-                            .on_confirm({
-                                let wm = wm.clone();
-                                let app_state = app_state.clone();
-                                let settings = settings.clone();
-                                let app_name = app_name.clone();
-                                move |_window, cx| {
-                                    let app_name = app_name.clone();
-                                    app_state.update(cx, |s, _cx| {
-                                        if !s.settings.hotkey_blacklist.contains(&app_name) {
-                                            s.settings.hotkey_blacklist.push(app_name.clone());
-                                            s.settings.save();
-                                        }
-                                    });
-                                    // --- Sync WindowManager's blacklist from settings ---
-                                    let updated =
-                                        app_state.read(cx).settings.hotkey_blacklist.clone();
-                                    wm.update(cx, |wm, _cx| {
-                                        wm.set_blacklist(updated);
-                                    });
-                                    settings.update(cx, |panel, cx| {
-                                        panel.clear_hotkey_confirm(cx);
-                                    });
-                                }
-                            })
-                            .on_cancel({
-                                let settings = settings.clone();
-                                move |_window, cx| {
-                                    settings.update(cx, |panel, cx| {
-                                        panel.clear_hotkey_confirm(cx);
-                                    });
-                                }
-                            })
-                            .focus_handle(dialog_focus.clone())
-                            .render_animated(window, cx, hotkey_confirm_gen)
-                    }
-                    Some(hotkey::HotkeyConfirmAction::RemoveBlacklist { app_name }) => {
-                        ConfirmDialog::remove_blacklist(&app_name)
-                            .theme(self.theme.clone())
-                            .on_confirm({
-                                let wm = wm.clone();
-                                let app_state = app_state.clone();
-                                let settings = settings.clone();
-                                let app_name = app_name.clone();
-                                move |_window, cx| {
-                                    app_state.update(cx, |s, _cx| {
-                                        s.settings.hotkey_blacklist.retain(|a| a != &app_name);
-                                        s.settings.save();
-                                    });
-                                    // --- Sync WindowManager's blacklist from settings ---
-                                    let updated =
-                                        app_state.read(cx).settings.hotkey_blacklist.clone();
-                                    wm.update(cx, |wm, _cx| {
-                                        wm.set_blacklist(updated);
-                                    });
-                                    settings.update(cx, |panel, cx| {
-                                        panel.clear_hotkey_confirm(cx);
-                                    });
-                                }
-                            })
-                            .on_cancel({
-                                let settings = settings.clone();
-                                move |_window, cx| {
-                                    settings.update(cx, |panel, cx| {
-                                        panel.clear_hotkey_confirm(cx);
-                                    });
-                                }
-                            })
-                            .focus_handle(dialog_focus.clone())
-                            .render_animated(window, cx, hotkey_confirm_gen)
-                    }
-                    Some(hotkey::HotkeyConfirmAction::AddPasteShortcut { app_name, shortcut }) => {
-                        ConfirmDialog::add_paste_shortcut(&app_name, &shortcut)
-                            .theme(self.theme.clone())
-                            .on_confirm({
-                                let settings = settings.clone();
-                                let app_name = app_name.clone();
-                                let shortcut = shortcut.clone();
-                                move |_window, cx| {
-                                    settings.update(cx, |_panel, cx| {
-                                        cx.emit(SettingsEvent::HotkeyPasteShortcut {
-                                            action: hotkey::HotkeyConfirmAction::AddPasteShortcut {
-                                                app_name: app_name.clone(),
-                                                shortcut: shortcut.clone(),
-                                            },
-                                        });
-                                    });
-                                }
-                            })
-                            .on_cancel({
-                                let settings = settings.clone();
-                                move |_window, cx| {
-                                    settings.update(cx, |panel, cx| {
-                                        panel.clear_paste_shortcut_state(cx);
-                                        panel.clear_hotkey_confirm(cx);
-                                    });
-                                }
-                            })
-                            .focus_handle(dialog_focus.clone())
-                            .render_animated(window, cx, hotkey_confirm_gen)
-                    }
-                    Some(hotkey::HotkeyConfirmAction::RemovePasteShortcut { app_name }) => {
-                        ConfirmDialog::remove_paste_shortcut(&app_name)
-                            .theme(self.theme.clone())
-                            .on_confirm({
-                                let settings = settings.clone();
-                                let app_name = app_name.clone();
-                                move |_window, cx| {
-                                    settings.update(cx, |_panel, cx| {
-                                        cx.emit(SettingsEvent::HotkeyPasteShortcut {
-                                            action:
-                                                hotkey::HotkeyConfirmAction::RemovePasteShortcut {
-                                                    app_name: app_name.clone(),
-                                                },
-                                        });
-                                    });
-                                }
-                            })
-                            .on_cancel({
-                                let settings = settings.clone();
-                                move |_window, cx| {
-                                    settings.update(cx, |panel, cx| {
-                                        panel.clear_paste_shortcut_state(cx);
-                                        panel.clear_hotkey_confirm(cx);
-                                    });
-                                }
-                            })
-                            .focus_handle(dialog_focus.clone())
-                            .render_animated(window, cx, hotkey_confirm_gen)
-                    }
-                    None => div().into_any_element(),
-                };
-
-                root.child(
-                    div()
-                        .absolute()
-                        .left(px(36.))
-                        .right(px(0.))
-                        .top(px(0.))
-                        .bottom(px(0.))
-                        .child(dialog_element),
-                )
-            })
-            .when(backend_panel_visible, |root| {
-                root.child(
-                    div()
-                        .absolute()
-                        .left(px(36.))
-                        .right(px(0.))
-                        .top(px(0.))
-                        .bottom(px(0.))
-                        .opacity(backend_panel_opacity)
-                        .child(backend_panel),
                 )
             })
             .when(

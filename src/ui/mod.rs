@@ -13,6 +13,7 @@ pub mod root;
 pub mod search_bar;
 pub mod search_highlight;
 pub mod settings;
+pub mod settings_window;
 pub mod sidebar;
 pub mod tag_filter;
 pub mod tag_picker;

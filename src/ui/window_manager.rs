@@ -227,9 +227,6 @@ pub enum WindowManagerEvent {
     ClipboardChanged,
     /// Pin state changed (unpinned on hotkey show, or toggled by titlebar).
     PinnedChanged(bool),
-    /// Tray menu "Settings" clicked — switch to settings view.
-    /// TODO: Implement when settings panel GPUI migration is complete.
-    OpenSettings,
     /// Hotkey recording completed (success or error) — RootView should
     /// notify SettingsPanel to re-render with updated hotkey / recording state.
     HotkeyRecordingComplete,
@@ -245,15 +242,20 @@ pub enum WindowManagerEvent {
     /// Main window DPI changed — RootView should force a re-render.
     #[cfg(target_os = "windows")]
     DpiChanged,
-    /// Open settings and switch to the version tab.
-    OpenVersionSettings,
     /// An update is available — RootView should show a notification toast.
     UpdateAvailable,
     /// Update progress changed — RootView should refresh toast / settings page.
     UpdateProgress(update::UpdatePhase),
     BitmapPasteFinished,
-    /// Reset RootView to clipboard history page (when always_reset_to_clipboard is on).
-    ResetToClipboard,
+    /// Theme changed from the settings window — RootView should re-derive its
+    /// theme and re-apply it to the main window's child views.
+    SettingsThemeChanged(String),
+    /// A clipboard-related setting changed from the settings window — RootView
+    /// should reload / re-scroll the main window's list.
+    SettingsClipboardChanged {
+        reload_items: bool,
+        scroll_to_top: bool,
+    },
 }
 
 /// Unified window manager entity.
@@ -337,6 +339,16 @@ pub struct WindowManager {
     quick_hwnd: isize,
     #[cfg(target_os = "macos")]
     quick_ns_window: isize,
+
+    // --- Settings window (separate top-level, normal activated window) ---
+    settings_window: Option<AnyWindowHandle>,
+    settings_view: Option<Entity<crate::ui::settings_window::SettingsWindowView>>,
+    settings_visible: bool,
+    #[cfg(target_os = "windows")]
+    settings_hwnd: isize,
+    #[cfg(target_os = "macos")]
+    settings_ns_window: isize,
+
     // --- System tray ---
     tray: Option<TrayManager>,
 
@@ -444,6 +456,13 @@ impl WindowManager {
             quick_hwnd: 0,
             #[cfg(target_os = "macos")]
             quick_ns_window: 0,
+            settings_window: None,
+            settings_view: None,
+            settings_visible: false,
+            #[cfg(target_os = "windows")]
+            settings_hwnd: 0,
+            #[cfg(target_os = "macos")]
+            settings_ns_window: 0,
             _poll_task: None,
             #[cfg(target_os = "windows")]
             _main_show_task: None,
@@ -887,12 +906,7 @@ impl WindowManager {
                 self.tray_triggered = false;
             }
             Some(TrayAction::OpenSettings) => {
-                if !self.visible {
-                    self.tray_triggered = true;
-                    self.show_and_focus(cx);
-                    self.tray_triggered = false;
-                }
-                cx.emit(WindowManagerEvent::OpenSettings);
+                self.show_settings_window(cx);
             }
             Some(TrayAction::Restart) => {
                 self.do_restart(cx);
@@ -901,17 +915,12 @@ impl WindowManager {
                 self.do_quit(cx);
             }
             Some(TrayAction::CheckUpdate) => {
-                // Emit OpenVersionSettings BEFORE start_update_check so the
-                // RootView switches to the version tab first. Otherwise the
-                // UpdateProgress(Checking) event arrives while current_view is
-                // still "clipboard" and the on-version-tab suppression fails.
-                cx.emit(WindowManagerEvent::OpenVersionSettings);
+                // Open the settings window on the version tab BEFORE
+                // start_update_check so the UpdateProgress(Checking) event's
+                // on-version-tab suppression works (the settings window is
+                // already visible on tab 5 by the time the event arrives).
+                self.show_settings_window_on_tab(5, cx);
                 self.start_update_check(cx);
-                if !self.visible {
-                    self.tray_triggered = true;
-                    self.show_and_focus(cx);
-                    self.tray_triggered = false;
-                }
             }
             None => {}
         }
@@ -1278,13 +1287,6 @@ impl WindowManager {
         // --- Reload items from DB (they were cleared on hide) ---
         self.state.update(cx, |state, _cx| state.reload_items());
         cx.emit(WindowManagerEvent::ClipboardChanged);
-
-        // When enabled, reset to clipboard history on every "show" action.
-        // Skip when tray_triggered is true — those are directed navigations
-        // (OpenSettings / OpenVersionSettings) that emit their own events after.
-        if !self.tray_triggered && self.state.read(cx).settings.always_reset_to_clipboard {
-            cx.emit(WindowManagerEvent::ResetToClipboard);
-        }
 
         #[cfg(target_os = "windows")]
         {
@@ -1895,6 +1897,96 @@ impl WindowManager {
         self.release_memory(cx);
     }
 
+    // --- Settings window (separate, normal activated window) ---
+
+    /// True while the settings window is showing *and* sitting on the version
+    /// tab — used to suppress the update toast in the main window.
+    pub fn is_settings_on_version_tab(&self, cx: &App) -> bool {
+        self.settings_visible
+            && self
+                .settings_view
+                .as_ref()
+                .is_some_and(|v| v.read(cx).active_tab(cx) == 5)
+    }
+
+    /// Show the separate settings window, activating and focusing it normally
+    /// (unlike the floating history popup, which is shown without activation).
+    pub fn show_settings_window(&mut self, cx: &mut Context<Self>) {
+        #[cfg(target_os = "windows")]
+        {
+            use windows_sys::Win32::UI::WindowsAndMessaging::{
+                SetForegroundWindow, ShowWindow, SW_RESTORE, SW_SHOW,
+            };
+            let hwnd = self.settings_hwnd as *mut std::ffi::c_void;
+            if hwnd.is_null() {
+                return;
+            }
+            // SAFETY: HWND is our own window. Show + restore (if minimised) +
+            // bring to foreground so the user can type into settings inputs.
+            unsafe {
+                ShowWindow(hwnd, if self.settings_visible { SW_RESTORE } else { SW_SHOW });
+                SetForegroundWindow(hwnd);
+            }
+        }
+        #[cfg(target_os = "macos")]
+        {
+            cx.activate(true);
+            if self.settings_ns_window != 0 {
+                let window =
+                    unsafe { &*(self.settings_ns_window as *const objc2_app_kit::NSWindow) };
+                window.makeKeyAndOrderFront(None);
+            }
+        }
+        self.settings_visible = true;
+        cx.notify();
+    }
+
+    /// Show the settings window and switch it to a specific tab first.
+    pub fn show_settings_window_on_tab(&mut self, tab: usize, cx: &mut Context<Self>) {
+        if let Some(view) = self.settings_view.clone() {
+            view.update(cx, |view, cx| view.set_active_tab(tab, cx));
+        }
+        self.show_settings_window(cx);
+    }
+
+    /// Hide the settings window (never destroyed — consistent with the main
+    /// and quick windows).
+    pub fn hide_settings_window(&mut self, _cx: &mut Context<Self>) {
+        #[cfg(target_os = "windows")]
+        {
+            use windows_sys::Win32::UI::WindowsAndMessaging::{
+                SetWindowPos, SWP_HIDEWINDOW, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
+            };
+            let hwnd = self.settings_hwnd as *mut std::ffi::c_void;
+            if !hwnd.is_null() {
+                // Hide with SWP_HIDEWINDOW rather than SW_HIDE (which reads as a
+                // minimise and breaks GPUI's renderer restore), same as the main
+                // and quick windows.
+                // SAFETY: HWND is our own window; the SWP_NO* flags mean this only hides it.
+                unsafe {
+                    SetWindowPos(
+                        hwnd,
+                        std::ptr::null_mut(),
+                        0,
+                        0,
+                        0,
+                        0,
+                        SWP_HIDEWINDOW | SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER,
+                    );
+                }
+            }
+        }
+        #[cfg(target_os = "macos")]
+        {
+            if self.settings_ns_window != 0 {
+                let window =
+                    unsafe { &*(self.settings_ns_window as *const objc2_app_kit::NSWindow) };
+                window.orderOut(None);
+            }
+        }
+        self.settings_visible = false;
+    }
+
     // `return` avoids rust-analyzer false E0308 with #[cfg] arms.
     #[allow(clippy::needless_return)]
     fn mouse_buttons_down() -> bool {
@@ -2183,6 +2275,31 @@ impl WindowManager {
                     | SWP_NOZORDER,
             );
         }
+    }
+
+    pub fn set_settings_window(
+        &mut self,
+        handle: AnyWindowHandle,
+        view: Entity<crate::ui::settings_window::SettingsWindowView>,
+        _cx: &mut Context<Self>,
+    ) {
+        self.settings_window = Some(handle);
+        self.settings_view = Some(view);
+    }
+
+    /// Store the settings window's HWND. Unlike the quick popup, this window is
+    /// a normal activated window: no WS_EX_NOACTIVATE / WS_EX_TOOLWINDOW, so it
+    /// shows in the taskbar and Alt-Tab and takes focus when shown.
+    #[cfg(target_os = "windows")]
+    pub fn set_settings_hwnd(&mut self, hwnd: isize) {
+        self.settings_hwnd = hwnd;
+    }
+
+    #[cfg(target_os = "macos")]
+    pub fn set_settings_ns_window(&mut self, ns_window: isize) {
+        // A standard macOS window — deliberately not styled like the floating
+        // quick popup (no _style_ns_window).
+        self.settings_ns_window = ns_window;
     }
 
     /// Shared macOS window styling — transparent floating panel with no chrome buttons.
