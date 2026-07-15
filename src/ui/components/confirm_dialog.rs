@@ -119,6 +119,15 @@ impl ConfirmDialog {
             .danger(true)
     }
 
+    /// Clear all non-favorite clipboard history confirmation.
+    pub fn clear_all() -> Self {
+        Self::new()
+            .title(I18nKey::ConfirmClearAllTitle.text())
+            .message(I18nKey::ConfirmClearAllMsg.text())
+            .confirm_label(I18nKey::ConfirmClearAllLabel.text())
+            .danger(true)
+    }
+
     /// Remove app from hotkey blacklist confirmation.
     pub fn remove_blacklist(app_name: &str) -> Self {
         Self::new()

@@ -50,6 +50,7 @@ fn macos_control_modifier_pressed() -> bool {
 pub(crate) enum ConfirmDialogState {
     DeleteSingle { id: i64 },
     DeleteBatch { count: usize },
+    ClearAll,
 }
 
 pub enum ClipboardListEvent {
@@ -833,6 +834,12 @@ impl ClipboardListView {
     /// Dismiss the active confirmation dialog.
     pub fn dismiss_confirm_dialog(&mut self, cx: &mut Context<Self>) {
         self.confirm_dialog = None;
+        cx.notify();
+    }
+
+    /// Request the "clear all history" confirmation dialog.
+    pub fn request_clear_all(&mut self, cx: &mut Context<Self>) {
+        self.confirm_dialog = Some(ConfirmDialogState::ClearAll);
         cx.notify();
     }
 

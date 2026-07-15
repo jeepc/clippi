@@ -1844,6 +1844,42 @@ impl AppState {
         let ids: Vec<i64> = self.selected_ids.drain(..).collect();
         self.items.retain(|it| !ids.contains(&it.id));
     }
+
+    /// Clear all non-favorite clipboard history (favorites are kept).
+    /// Records deletion tombstones only for deleted items in sync scope,
+    /// mirroring `batch_delete`'s sync logic.
+    pub fn clear_all_non_favorites(&mut self) {
+        let now = chrono::Utc::now().to_rfc3339();
+        let device = crate::services::backends::local_folder::hostname();
+
+        match self.db.clear_non_favorites() {
+            Ok(deleted) => {
+                let mut has_sync_item = false;
+                for (hash, ctype) in &deleted {
+                    // Mirror should_mark_sync_dirty: image/file never sync;
+                    // in favorites-only mode non-favorites never sync (all
+                    // deleted items here are non-favorites).
+                    let ct = ContentType::from_str(ctype);
+                    if matches!(ct, ContentType::Image | ContentType::File) {
+                        continue;
+                    }
+                    if self.settings.sync_favorites_only {
+                        continue;
+                    }
+                    has_sync_item = true;
+                    if let Err(e) = self.db.record_item_deletion(*hash, &now, &device) {
+                        log::error!("clear_all record_item_deletion({hash}): {e}");
+                    }
+                }
+                if has_sync_item {
+                    self.sync_dirty.store(true, Ordering::SeqCst);
+                }
+                // Reload in-memory list from DB with current filters (favorites remain).
+                self.reload_items();
+            }
+            Err(e) => log::error!("clear_non_favorites: {e}"),
+        }
+    }
 }
 
 fn open_system_target(target: &str) {

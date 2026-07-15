@@ -5,6 +5,7 @@
 //! --- The drag area covers the left portion (width - 92px). ---
 
 use gpui::*;
+use gpui_component::tooltip::Tooltip;
 use std::sync::{Arc, OnceLock};
 
 use crate::core::i18n_keys::I18nKey;
@@ -76,6 +77,7 @@ impl Render for Titlebar {
         let fav_color = theme.fav_color;
         let state = self.state.clone();
         let list_view = self.list_view.clone();
+        let clear_list_view = self.list_view.clone();
         let fav_titlebar = cx.entity().clone();
         let pin_titlebar = cx.entity().clone();
         let settings_titlebar = cx.entity().clone();
@@ -126,6 +128,35 @@ impl Render for Titlebar {
                     .items_center()
                     .gap(px(2.))
                     .pr(px(4.))
+                    // --- Clear all history button (28x28) ---
+                    .child(
+                        div()
+                            .id("titlebar-clear-all")
+                            .w(px(28.))
+                            .h(px(28.))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .cursor(CursorStyle::PointingHand)
+                            .tooltip(|window, cx| {
+                                let label = I18nKey::TitlebarClearAllTooltip.text();
+                                Tooltip::element(move |_window, _cx| {
+                                    div().text_size(px(10.)).child(label)
+                                })
+                                .build(window, cx)
+                            })
+                            .on_mouse_down(MouseButton::Left, move |_ev, _window, cx| {
+                                clear_list_view
+                                    .update(cx, |list, cx| list.request_clear_all(cx));
+                            })
+                            .child(
+                                div()
+                                    .text_size(px(15.))
+                                    .font_family("iconfont")
+                                    .text_color(text_2)
+                                    .child("\u{e62e}"),
+                            ),
+                    )
                     // --- Fav filter button (28x28) ---
                     .child(
                         div()

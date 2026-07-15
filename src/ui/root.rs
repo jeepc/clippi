@@ -1124,6 +1124,27 @@ impl Render for RootView {
                             })
                             .render_animated(window, cx, confirm_dialog_gen)
                     }
+                    Some(ConfirmDialogState::ClearAll) => ConfirmDialog::clear_all()
+                        .theme(self.theme.clone())
+                        .focus_handle(dialog_focus.clone())
+                        .on_confirm({
+                            let s = app_state.clone();
+                            let l = list.clone();
+                            move |_window, cx| {
+                                s.update(cx, |s, _cx| s.clear_all_non_favorites());
+                                l.update(cx, |lst, cx| {
+                                    lst.sync_items_from_state(cx);
+                                    lst.dismiss_confirm_dialog(cx);
+                                });
+                            }
+                        })
+                        .on_cancel({
+                            let l = list.clone();
+                            move |_window, cx| {
+                                l.update(cx, |lst, cx| lst.dismiss_confirm_dialog(cx));
+                            }
+                        })
+                        .render_animated(window, cx, confirm_dialog_gen),
                     None => div().into_any_element(),
                 };
 

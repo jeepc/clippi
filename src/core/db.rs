@@ -1039,6 +1039,36 @@ impl Database {
         Ok(())
     }
 
+    /// Clear all non-favorite items (and their tag associations) in one
+    /// transaction. Favorite items (`is_favorite = 1`) are kept.
+    ///
+    /// Returns the `(content_hash, content_type)` of every deleted item so the
+    /// caller can record sync tombstones for items in sync scope.
+    pub fn clear_non_favorites(&self) -> SqlResult<Vec<(u64, String)>> {
+        let tx = self.conn.unchecked_transaction()?;
+        // Collect the deleted items' hash/type before removing them.
+        let deleted: Vec<(u64, String)> = {
+            let mut stmt = tx.prepare(
+                "SELECT content_hash, content_type FROM clipboard_items WHERE is_favorite = 0",
+            )?;
+            let rows: Vec<(u64, String)> = stmt
+                .query_map([], |row| {
+                    Ok((row.get::<_, i64>(0)? as u64, row.get::<_, String>(1)?))
+                })?
+                .filter_map(|r| r.ok())
+                .collect();
+            rows
+        };
+        tx.execute(
+            "DELETE FROM item_tags WHERE item_id IN \
+             (SELECT id FROM clipboard_items WHERE is_favorite = 0)",
+            [],
+        )?;
+        tx.execute("DELETE FROM clipboard_items WHERE is_favorite = 0", [])?;
+        tx.commit()?;
+        Ok(deleted)
+    }
+
     /// Prune oldest non-favorite items when total exceeds max_items.
     /// Returns the ids of deleted items. max_items == 0 means unlimited.
     pub fn prune_excess_non_favorites(&self, max_items: u32) -> SqlResult<Vec<i64>> {
