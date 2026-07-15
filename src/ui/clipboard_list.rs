@@ -56,6 +56,13 @@ pub(crate) enum ConfirmDialogState {
 pub enum ClipboardListEvent {
     OpenEdit(i64),
     RequestHide,
+    /// Dismiss the popup after a single-click paste (does not force-hide when
+    /// pinned / auto-hide off). Distinct from `RequestHide` so Esc/close keeps
+    /// its unconditional hide semantics.
+    RequestDismissAfterPaste,
+    /// Take real OS focus (needed for IME text entry into the search box, which
+    /// a non-activating click can't provide). Windows-only effect.
+    RequestActivate,
 }
 
 impl EventEmitter<ClipboardListEvent> for ClipboardListView {}
@@ -1434,6 +1441,13 @@ impl Render for ClipboardListView {
                                                             s.paste_item(item_id, false);
                                                         });
                                                         this.sync_items_from_state_for_usage(cx);
+                                                        // The paste click doesn't activate
+                                                        // the window (WS_EX_NOACTIVATE), so
+                                                        // the old activation-loss auto-hide
+                                                        // won't fire — dismiss explicitly.
+                                                        cx.emit(
+                                                            ClipboardListEvent::RequestDismissAfterPaste,
+                                                        );
                                                     }
                                                     return;
                                                 }

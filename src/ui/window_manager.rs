@@ -1359,12 +1359,15 @@ impl WindowManager {
             #[cfg(target_os = "windows")]
             {
                 use windows_sys::Win32::UI::WindowsAndMessaging::SetForegroundWindow;
+                // Exit floating FIRST: this clears WS_EX_NOACTIVATE (via
+                // `leave_unfocused_mode`) so the following `SetForegroundWindow`
+                // can actually activate the window.
+                self.exit_floating_mode(cx);
                 let hwnd = self.hwnd as *mut std::ffi::c_void;
                 if !hwnd.is_null() {
                     // SAFETY: HWND is our own window.
                     unsafe { SetForegroundWindow(hwnd) };
                 }
-                self.exit_floating_mode(cx);
             }
             #[cfg(target_os = "macos")]
             {
@@ -1472,6 +1475,12 @@ impl WindowManager {
             return;
         }
 
+        // Make the window non-activating for as long as it floats, so a click on
+        // a clipboard item never steals foreground from the paste target. The
+        // window is still hidden here (the async `_main_show_task` raises it
+        // afterward), so the `SWP_FRAMECHANGED` re-apply causes no visible flicker.
+        self.set_main_no_activate(true);
+
         // A low-level hook sees keys before RegisterHotKey does; tell it to let
         // the app's own hotkeys through so they keep toggling the window.
         let hotkeys: Vec<String> = self
@@ -1541,6 +1550,12 @@ impl WindowManager {
         }
         keyboard_hook::uninstall();
         self._main_unfocused_poll_task = None;
+
+        // Restore a normal activatable ex-style. Done before the pinned/hwnd
+        // early-return so it always runs on every exit from floating (focus-take,
+        // click-outside hide, switch-away, hotkey-hide) — the next tray/settings
+        // show can then take real focus + IME.
+        self.set_main_no_activate(false);
 
         // Drop out of the always-on-top band we showed in — unless the user
         // pinned the window, which owns that state itself.
@@ -1615,9 +1630,15 @@ impl WindowManager {
                         && cursor.y >= rect.top
                         && cursor.y < rect.bottom;
                     if inside {
-                        // The click activates us (no WS_EX_NOACTIVATE), so hand the
-                        // window back to the native focus path.
-                        self.exit_floating_mode(cx);
+                        // WS_EX_NOACTIVATE: the click never steals foreground, so we
+                        // must NOT take focus — staying unfocused is what keeps the
+                        // external paste target's caret (e.g. Explorer rename box)
+                        // alive. GPUI still receives the click and runs the item /
+                        // pin / search handlers. A genuine text-entry interaction
+                        // (search box) requests focus explicitly via `take_main_focus`.
+                        log::trace!(
+                            "main: inside click while floating; staying unfocused (paste target keeps focus)"
+                        );
                     } else {
                         self.dismiss_unfocused(cx);
                     }
@@ -1654,6 +1675,67 @@ impl WindowManager {
             self.exit_floating_mode(cx);
         }
     }
+
+    /// Take real OS focus while the window is floating unfocused.
+    ///
+    /// A plain click no longer activates the window (WS_EX_NOACTIVATE), which is
+    /// what makes paste-into-transient-controls work. But genuine text entry into
+    /// the search box needs real focus so the IME (Chinese/Japanese composition)
+    /// works. The search input calls this on interaction to hand the window back
+    /// to the native focus path.
+    #[cfg(target_os = "windows")]
+    pub fn take_main_focus(&mut self, cx: &mut Context<Self>) {
+        if self.focus_taken {
+            return;
+        }
+        // Clears WS_EX_NOACTIVATE (via `leave_unfocused_mode`), uninstalls the
+        // hook, and sets `focus_taken` so the native `poll_focus` auto-hide resumes.
+        self.exit_floating_mode(cx);
+        use windows_sys::Win32::UI::WindowsAndMessaging::SetForegroundWindow;
+        let hwnd = self.hwnd as *mut std::ffi::c_void;
+        if !hwnd.is_null() {
+            // SAFETY: HWND is our own window; style was just cleared so activation succeeds.
+            unsafe { SetForegroundWindow(hwnd) };
+        }
+        log::debug!("main window took real focus (search interaction); IME enabled");
+    }
+
+    /// Dismiss the popup after a single-click paste.
+    ///
+    /// Because the paste click no longer activates the window, the old
+    /// activation-loss auto-hide never fires — so we must dismiss explicitly.
+    /// This also releases the keyboard hook (via `hide` → `leave_unfocused_mode`),
+    /// which is required by the invariant that the global key-swallowing hook must
+    /// be released whenever we stop being the recipient. When auto-hide is off or
+    /// the window is pinned we deliberately stay floating (hook stays installed,
+    /// popup persists for further pastes); a later switch-away / click-outside in
+    /// `poll_unfocused` still releases the hook.
+    #[cfg(target_os = "windows")]
+    pub fn dismiss_after_paste(&mut self, cx: &mut Context<Self>) {
+        log::debug!(
+            "post single-click paste: auto_hide={} pinned={} -> {}",
+            self.auto_hide,
+            self.pinned,
+            if self.auto_hide && !self.pinned {
+                "hide"
+            } else {
+                "stay"
+            }
+        );
+        if self.auto_hide && !self.pinned {
+            self.hide(cx);
+        }
+    }
+
+    /// No-op on non-Windows: the macOS show path activates normally, so the
+    /// search box already has real focus + IME.
+    #[cfg(not(target_os = "windows"))]
+    pub fn take_main_focus(&mut self, _cx: &mut Context<Self>) {}
+
+    /// No-op on non-Windows: macOS hides via the NSWorkspace focus poller after
+    /// the paste activates the target app, so no explicit dismissal is needed.
+    #[cfg(not(target_os = "windows"))]
+    pub fn dismiss_after_paste(&mut self, _cx: &mut Context<Self>) {}
 
     /// Whether an HWND belongs to this process (our own dialogs, menus, toasts).
     #[cfg(target_os = "windows")]
@@ -2312,6 +2394,53 @@ impl WindowManager {
     pub fn set_hwnd(&mut self, hwnd: isize) {
         self.hwnd = hwnd;
         crate::platform::focus::set_clippi_hwnd(hwnd);
+    }
+
+    /// Toggle `WS_EX_NOACTIVATE` on the main window.
+    ///
+    /// While floating unfocused we keep this style set so a click on a clipboard
+    /// item never steals foreground from the paste target — the target's caret
+    /// (including transient controls like Explorer's inline rename / address bar)
+    /// stays alive, so the subsequent Ctrl+V lands correctly. Mirrors the quick
+    /// window (`set_quick_hwnd`). The style is cleared again whenever the window
+    /// leaves floating mode so tray/settings shows can take real focus + IME.
+    #[cfg(target_os = "windows")]
+    fn set_main_no_activate(&self, enable: bool) {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            GetWindowLongW, SetWindowLongW, SetWindowPos, GWL_EXSTYLE, SWP_FRAMECHANGED,
+            SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WS_EX_NOACTIVATE,
+        };
+        let hwnd = self.hwnd as *mut std::ffi::c_void;
+        if hwnd.is_null() {
+            return;
+        }
+        // Read-modify-write so we preserve WS_EX_TOOLWINDOW / WS_EX_APPWINDOW /
+        // WS_EX_TOPMOST that `apply_taskbar_visibility` and the show path toggle
+        // independently.
+        // SAFETY: HWND is our own window. `GetWindowLongW`/`SetWindowLongW` read
+        // and write the extended style; `SetWindowPos` with NOMOVE|NOSIZE|NOZORDER|
+        // NOACTIVATE only re-applies the frame so the new style takes effect.
+        unsafe {
+            let cur = GetWindowLongW(hwnd, GWL_EXSTYLE);
+            let next = if enable {
+                cur | WS_EX_NOACTIVATE as i32
+            } else {
+                cur & !(WS_EX_NOACTIVATE as i32)
+            };
+            if next != cur {
+                SetWindowLongW(hwnd, GWL_EXSTYLE, next);
+                SetWindowPos(
+                    hwnd,
+                    std::ptr::null_mut(),
+                    0,
+                    0,
+                    0,
+                    0,
+                    SWP_FRAMECHANGED | SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER,
+                );
+            }
+        }
+        log::debug!("main window WS_EX_NOACTIVATE = {enable}");
     }
 
     pub fn set_quick_window(

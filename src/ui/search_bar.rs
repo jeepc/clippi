@@ -261,6 +261,18 @@ impl Render for SearchBar {
                     .border_color(divider)
                     .mb(px(6.))
                     .overflow_hidden()
+                    // Clicking the search box requests real OS focus so IME
+                    // (Chinese/Japanese composition) works — a non-activating
+                    // click alone can't provide it. Does not stop propagation, so
+                    // the text input still receives the click for caret placement.
+                    .on_mouse_down(MouseButton::Left, {
+                        let list = self.list_view.clone();
+                        move |_ev, _window, cx| {
+                            list.update(cx, |_list, cx| {
+                                cx.emit(ClipboardListEvent::RequestActivate);
+                            });
+                        }
+                    })
                     .on_key_down({
                         let list = self.list_view.clone();
                         let app_state = self.state.clone();

@@ -382,6 +382,16 @@ impl RootView {
                             wm.hide(cx);
                         });
                     }
+                    ClipboardListEvent::RequestDismissAfterPaste => {
+                        this.window_manager.update(cx, |wm, cx| {
+                            wm.dismiss_after_paste(cx);
+                        });
+                    }
+                    ClipboardListEvent::RequestActivate => {
+                        this.window_manager.update(cx, |wm, cx| {
+                            wm.take_main_focus(cx);
+                        });
+                    }
                 },
             ),
             cx.subscribe(
