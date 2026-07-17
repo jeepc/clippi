@@ -9,6 +9,9 @@ use gpui::{rgb, rgba, Rgba, WindowAppearance};
 /// Colors match the original Slint design pixel-for-pixel.
 #[derive(Debug, Clone)]
 pub struct ClippiTheme {
+    // --- Mode flag ---
+    pub is_dark: bool,
+
     // --- Window chrome ---
     pub bg: Rgba,
     pub surface: Rgba,
@@ -46,36 +49,40 @@ pub struct ClippiTheme {
 impl ClippiTheme {
     pub fn dark() -> Self {
         Self {
-            bg: rgb(0x191a1b),
-            surface: rgb(0x232425),
-            surface_press: rgb(0x3a3b3c),
-            titlebar_bg: rgb(0x191a1b),
+            is_dark: true,
 
-            text_1: rgb(0xeaebec),
-            text_2: rgb(0x919496),
-            text_3: rgb(0x5f6264),
+            bg: rgb(0x1e1d1c),
+            surface: rgb(0x2a2826),
+            surface_press: rgb(0x3a3733),
+            titlebar_bg: rgb(0x1e1d1c),
 
-            accent: rgb(0xc0c1c3),
-            accent_soft: rgb(0x2c2d2e),
+            text_1: rgb(0xe2e0dc),
+            text_2: rgb(0x9b968e),
+            text_3: rgb(0x6b665e),
+
+            accent: rgb(0xcbc9c5),
+            accent_soft: rgb(0x302e2a),
 
             fav_color: rgb(0xd8a155),
             danger: rgb(0xff5f57),
-            divider: rgb(0x2b2c2d),
-            btn_hover: rgb(0x2b2c2d),
+            divider: rgb(0x322f2b),
+            btn_hover: rgb(0x322f2b),
 
-            tag_bg: rgb(0x2c2e2f),
-            tag_text: rgb(0xe0e1e3),
+            tag_bg: rgb(0x322f2b),
+            tag_text: rgb(0xddd9d3),
 
-            panel_surface: rgb(0x2c2d2e),
-            panel_input_bg: rgb(0x1e1f20),
+            panel_surface: rgb(0x2f2c29),
+            panel_input_bg: rgb(0x232120),
             panel_sep_line: rgba(0xffffff0d),
 
-            toast_bg: rgba(0x3a3b3de8),
+            toast_bg: rgba(0x3a3733e8),
         }
     }
 
     pub fn light() -> Self {
         Self {
+            is_dark: false,
+
             bg: rgb(0xf2f3f8),
             surface: rgb(0xffffff),
             surface_press: rgb(0xebedf5),
@@ -117,8 +124,8 @@ impl ClippiTheme {
 
     /// Accent color as a 22% opacity overlay (used for active filter button backgrounds).
     pub fn accent_overlay(&self) -> Rgba {
-        if self.bg == rgb(0x191a1b) {
-            rgba(0xc0c1c322)
+        if self.is_dark {
+            rgba(0xcbc9c522)
         } else {
             rgba(0x4a4b4d22)
         }
@@ -127,15 +134,15 @@ impl ClippiTheme {
     /// Accent color used behind search hits. Stronger than the generic
     /// overlay so short highlighted terms remain visible in dense previews.
     pub fn accent_highlight(&self) -> Rgba {
-        if self.bg == rgb(0x191a1b) {
-            rgba(0xc0c1c366)
+        if self.is_dark {
+            rgba(0xcbc9c566)
         } else {
             rgba(0x4a4b4d4d)
         }
     }
 
     pub fn accent_highlight_text(&self) -> Rgba {
-        if self.bg == rgb(0x191a1b) {
+        if self.is_dark {
             rgb(0xffffff)
         } else {
             rgb(0x000000)

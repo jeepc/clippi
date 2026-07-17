@@ -830,9 +830,9 @@ impl RenderOnce for ClipboardCard {
         let text_3 = theme.text_3;
         let danger = theme.danger;
         let path_warn = rgb(0xeab308);
-        let is_dark = theme.bg == rgb(0x191a1b);
+        let is_dark = theme.is_dark;
         let pill_bg = if is_dark {
-            rgba(0x232425e8)
+            rgba(0x2a2826e8)
         } else {
             rgba(0xffffffe8)
         };
@@ -847,7 +847,7 @@ impl RenderOnce for ClipboardCard {
             rgba(0x00000018)
         };
         let subtle_row_bg = if is_dark {
-            rgb(0x2b2c2d)
+            rgb(0x322f2b)
         } else {
             rgb(0xf4f5fb)
         };

@@ -153,8 +153,8 @@ impl SettingsPanel {
                                     .flex_1()
                                     .h(px(28.))
                                     .rounded(px(7.))
-                                    .bg(if self.theme.bg == rgb(0x191a1b) {
-                                        rgb(0x191a1b)
+                                    .bg(if self.theme.is_dark {
+                                        rgb(0x1e1d1c)
                                     } else {
                                         rgb(0xf2f3f8)
                                     })
@@ -286,8 +286,8 @@ impl SettingsPanel {
                 let divider = self.theme.divider;
                 let text_1 = self.theme.text_1;
                 let text_3 = self.theme.text_3;
-                let input_bg = if self.theme.bg == rgb(0x191a1b) {
-                    rgb(0x191a1b)
+                let input_bg = if self.theme.is_dark {
+                    rgb(0x1e1d1c)
                 } else {
                     rgb(0xf2f3f8)
                 };
@@ -418,8 +418,8 @@ impl SettingsPanel {
                 let divider = self.theme.divider;
                 let text_1 = self.theme.text_1;
                 let text_3 = self.theme.text_3;
-                let input_bg = if self.theme.bg == rgb(0x191a1b) {
-                    rgb(0x191a1b)
+                let input_bg = if self.theme.is_dark {
+                    rgb(0x1e1d1c)
                 } else {
                     rgb(0xf2f3f8)
                 };

@@ -181,7 +181,7 @@ impl Render for TagFilterPanel {
         let theme = ClippiTheme::from_setting(&app_state.settings.theme, Some(window.appearance()));
         let _ = app_state;
 
-        let is_dark = theme.bg == rgb(0x191a1b);
+        let is_dark = theme.is_dark;
         let accent = theme.accent;
         let text_1 = theme.text_1;
         let text_2 = theme.text_2;
@@ -506,7 +506,7 @@ pub fn render_edit_panel(
     on_color: impl Fn(&mut Window, &mut App, String) + 'static,
     on_save: impl Fn(&mut Window, &mut App, String, String) + 'static,
 ) -> impl IntoElement {
-    let is_dark = theme.bg == rgb(0x191a1b);
+    let is_dark = theme.is_dark;
     let accent = theme.accent;
     let text_1 = theme.text_1;
     let text_2 = theme.text_2;

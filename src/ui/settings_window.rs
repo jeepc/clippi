@@ -134,7 +134,7 @@ impl SettingsWindowView {
 
                     // --- Sync gpui_component theme so that Input, Scrollbar ---
                     // --- and other gpui_component widgets follow our theme. ---
-                    let is_dark = theme.bg == rgb(0x191a1b);
+                    let is_dark = theme.is_dark;
                     gpui_component::Theme::change(
                         if is_dark {
                             gpui_component::ThemeMode::Dark
@@ -245,7 +245,7 @@ impl SettingsWindowView {
             this.theme = ClippiTheme::from_setting("system", Some(this.window_appearance));
             let theme = this.theme.clone();
 
-            let is_dark = theme.bg == rgb(0x191a1b);
+            let is_dark = theme.is_dark;
             gpui_component::Theme::change(
                 if is_dark {
                     gpui_component::ThemeMode::Dark

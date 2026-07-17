@@ -103,7 +103,7 @@ impl RenderOnce for HoverToolbar {
         let text_2 = theme.text_2;
         let danger = theme.danger;
         let fav_color = theme.fav_color;
-        let is_dark = theme.bg == rgb(0x191a1b);
+        let is_dark = theme.is_dark;
         let pill_bg = if is_dark {
             rgba(0x232425e8)
         } else {

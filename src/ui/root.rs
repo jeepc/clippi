@@ -453,7 +453,7 @@ impl RootView {
 
             // Sync gpui_component theme so that Input, Scrollbar and other
             // gpui_component widgets follow our theme.
-            let is_dark = theme.bg == rgb(0x191a1b);
+            let is_dark = theme.is_dark;
             gpui_component::Theme::change(
                 if is_dark {
                     gpui_component::ThemeMode::Dark
@@ -525,7 +525,7 @@ impl Render for RootView {
         let is_clipboard = self.current_view == "clipboard";
         let is_edit = self.current_view == "edit";
         let theme = self.theme.clone();
-        let panel_border = if theme.bg == rgb(0x191a1b) {
+        let panel_border = if theme.is_dark {
             rgb(0x3a3b3c)
         } else {
             rgb(0xd0d2de)

@@ -229,12 +229,12 @@ impl Render for SearchBar {
         let type_slot_width =
             (type_toolbar_width - text_gap_total).max(0.0) / visible_count.max(1.0);
         let icon_only = type_slot_width < TYPE_FILTER_TEXT_MIN_SLOT_WIDTH;
-        let inactive_button_bg = if theme.bg == rgb(0x191a1b) {
+        let inactive_button_bg = if theme.is_dark {
             rgba(0xffffff0a)
         } else {
             rgba(0x00000008)
         };
-        let toolbar_divider = if theme.bg == rgb(0x191a1b) {
+        let toolbar_divider = if theme.is_dark {
             rgba(0xffffff18)
         } else {
             rgba(0x00000014)

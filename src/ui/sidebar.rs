@@ -43,7 +43,7 @@ impl Sidebar {
         list_view: Entity<ClipboardListView>,
         theme: &ClippiTheme,
     ) -> Self {
-        let dark_mode = theme.bg == rgb(0x191a1b);
+        let dark_mode = theme.is_dark;
         Self {
             state,
             list_view,
@@ -56,7 +56,7 @@ impl Sidebar {
 
     /// Update theme (called when user changes theme in settings).
     pub fn set_theme(&mut self, theme: &ClippiTheme, cx: &mut Context<Self>) {
-        self.dark_mode = theme.bg == rgb(0x191a1b);
+        self.dark_mode = theme.is_dark;
         cx.notify();
     }
 }
@@ -129,9 +129,9 @@ impl Render for Sidebar {
         // ── end collapse ──
 
         let dark = self.dark_mode;
-        let text_1 = if dark { rgb(0xeaebec) } else { rgb(0x1a1c2e) };
-        let row_bg_default = if dark { rgb(0x2a2b2e) } else { rgb(0xf5f6fa) };
-        let row_bg_hover = if dark { rgb(0x353638) } else { rgb(0xeceef4) };
+        let text_1 = if dark { rgb(0xe2e0dc) } else { rgb(0x1a1c2e) };
+        let row_bg_default = if dark { rgb(0x2a2826) } else { rgb(0xf5f6fa) };
+        let row_bg_hover = if dark { rgb(0x3a3733) } else { rgb(0xeceef4) };
         let state_for_click = self.state.clone();
         let list_for_click = self.list_view.clone();
         let sidebar_for_notify = cx.entity().clone();
@@ -277,7 +277,7 @@ impl Render for Sidebar {
             }))
             .when(hidden_count > 0, move |parent| {
                 let pill_bg = if dark {
-                    rgba(0x232425e8)
+                    rgba(0x2a2826e8)
                 } else {
                     rgba(0xffffffe8)
                 };

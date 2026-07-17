@@ -94,12 +94,12 @@ impl Render for TypeFilterConfigPanel {
         let surface = theme.panel_surface;
         let sep_line = theme.panel_sep_line;
         let btn_hover = theme.btn_hover;
-        let panel_border = if theme.bg == rgb(0x191a1b) {
+        let panel_border = if theme.is_dark {
             rgba(0xffffff14)
         } else {
             rgba(0x00000012)
         };
-        let is_dark = theme.bg == rgb(0x191a1b);
+        let is_dark = theme.is_dark;
         let arrow_bg = if is_dark {
             rgba(0xffffff0a)
         } else {
