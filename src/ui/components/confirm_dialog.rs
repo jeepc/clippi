@@ -218,6 +218,11 @@ impl ConfirmDialog {
         } else {
             theme.accent
         };
+        let confirm_fg = if is_danger {
+            rgb(0xffffff)
+        } else {
+            theme.on_accent
+        };
 
         if let Some(ref handle) = focus_handle {
             handle.focus(window);
@@ -325,7 +330,7 @@ impl ConfirmDialog {
                                     .px(px(12.))
                                     .rounded(px(4.))
                                     .text_size(px(12.))
-                                    .text_color(rgb(0xffffff))
+                                    .text_color(confirm_fg)
                                     .bg(confirm_color)
                                     .flex()
                                     .items_center()

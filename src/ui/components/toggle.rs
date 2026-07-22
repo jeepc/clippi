@@ -22,6 +22,8 @@ pub(crate) struct ToggleTransitionState {
 pub(crate) struct ToggleColors {
     pub accent: Rgba,
     pub track_off: Rgba,
+    /// 旋钮压在 `accent` 轨道上时的颜色（ON 态）。
+    pub on_accent: Rgba,
 }
 
 pub fn render_toggle(
@@ -99,6 +101,12 @@ pub fn render_toggle(
         cx.notify();
     });
     let track_bg = *bg_transition.evaluate(window, cx);
+    // ON 态旋钮压在 accent 轨道上，深色模式下轨道是浅灰，白色旋钮会糊在一起。
+    let knob_bg = if value {
+        colors.on_accent
+    } else {
+        rgb(0xffffff)
+    };
 
     div()
         .w(px(40.))
@@ -116,7 +124,7 @@ pub fn render_toggle(
                 .w(px(18.))
                 .h(px(18.))
                 .rounded(px(9.))
-                .bg(rgb(0xffffff))
+                .bg(knob_bg)
                 .ml(px(knob_x)),
         )
 }

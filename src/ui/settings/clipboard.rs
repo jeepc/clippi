@@ -38,6 +38,7 @@ impl SettingsPanel {
         let surface = theme.surface;
         let divider = theme.divider;
         let accent = theme.accent;
+        let on_accent = theme.on_accent;
         let text_1 = theme.text_1;
         let text_2 = theme.text_2;
         let text_3 = theme.text_3;
@@ -159,6 +160,7 @@ impl SettingsPanel {
                                         crate::ui::components::toggle::ToggleColors {
                                             accent,
                                             track_off: divider,
+                                            on_accent,
                                         },
                                         &mut self.toggle_states,
                                         window,
@@ -218,7 +220,7 @@ impl SettingsPanel {
                                         .text_size(px(10.))
                                         .font_weight(FontWeight::BOLD)
                                         .text_color(if is_selected {
-                                            rgb(0xffffff)
+                                            on_accent
                                         } else {
                                             text_2
                                         })

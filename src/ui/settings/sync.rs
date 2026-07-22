@@ -29,6 +29,7 @@ impl SettingsPanel {
         let surface = self.theme.surface;
         let divider = self.theme.divider;
         let accent = self.theme.accent;
+        let on_accent = self.theme.on_accent;
         let accent_soft = self.theme.accent_soft;
         let text_1 = self.theme.text_1;
         let text_2 = self.theme.text_2;
@@ -86,6 +87,7 @@ impl SettingsPanel {
                                 ToggleColors {
                                     accent,
                                     track_off: divider,
+                                    on_accent,
                                 },
                                 &mut self.toggle_states,
                                 window,
@@ -126,6 +128,7 @@ impl SettingsPanel {
                                     ToggleColors {
                                         accent,
                                         track_off: divider,
+                                        on_accent,
                                     },
                                     &mut self.toggle_states,
                                     window,
@@ -175,6 +178,7 @@ impl SettingsPanel {
                                     ToggleColors {
                                         accent,
                                         track_off: divider,
+                                        on_accent,
                                     },
                                     &mut self.toggle_states,
                                     window,
@@ -215,6 +219,7 @@ impl SettingsPanel {
                                         ToggleColors {
                                             accent,
                                             track_off: divider,
+                                            on_accent,
                                         },
                                         &mut self.toggle_states,
                                         window,
@@ -385,6 +390,7 @@ impl SettingsPanel {
         let surface = self.theme.titlebar_bg;
         let divider = self.theme.divider;
         let accent = self.theme.accent;
+        let on_accent = self.theme.on_accent;
         let accent_soft = self.theme.accent_soft;
         let text_1 = self.theme.text_1;
         let text_2 = self.theme.text_2;
@@ -541,6 +547,7 @@ impl SettingsPanel {
                                     ToggleColors {
                                         accent,
                                         track_off: divider,
+                                        on_accent,
                                     },
                                     &mut self.toggle_states,
                                     window,
@@ -591,7 +598,7 @@ impl SettingsPanel {
                                 .bg(if selected { accent } else { rgba(0x00000000) })
                                 .text_size(px(10.))
                                 .font_weight(FontWeight::BOLD)
-                                .text_color(if selected { rgb(0xffffff) } else { text_2 })
+                                .text_color(if selected { on_accent } else { text_2 })
                                 .flex()
                                 .items_center()
                                 .justify_center()
@@ -619,7 +626,7 @@ impl SettingsPanel {
                             .bg(accent)
                             .text_size(px(10.))
                             .font_weight(FontWeight::BOLD)
-                            .text_color(rgb(0xffffff))
+                            .text_color(on_accent)
                             .flex()
                             .items_center()
                             .justify_center()

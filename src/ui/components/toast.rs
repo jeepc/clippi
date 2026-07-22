@@ -137,6 +137,7 @@ impl RenderOnce for Toast {
         // Right: action buttons (matching ConfirmDialog button style)
         if !self.actions.is_empty() {
             let accent = self.theme.accent;
+            let on_accent = self.theme.on_accent;
             let btn_hover = self.theme.btn_hover;
             let text_2 = self.theme.text_2;
             let buttons =
@@ -147,7 +148,7 @@ impl RenderOnce for Toast {
                     .children(self.actions.into_iter().map(move |action| {
                         let is_primary = action.primary;
                         let btn_bg = if is_primary { accent } else { rgba(0x00000000) };
-                        let btn_text = if is_primary { rgb(0xffffff) } else { text_2 };
+                        let btn_text = if is_primary { on_accent } else { text_2 };
                         div()
                             .h(px(22.))
                             .px(px(10.))

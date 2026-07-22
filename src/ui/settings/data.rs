@@ -121,6 +121,7 @@ impl SettingsPanel {
                 let text_2 = self.theme.text_2;
                 let text_3 = self.theme.text_3;
                 let accent = self.theme.accent;
+                let on_accent = self.theme.on_accent;
 
                 div()
                     .h(px(76.))
@@ -246,7 +247,7 @@ impl SettingsPanel {
                                         div()
                                             .text_size(px(11.))
                                             .font_weight(FontWeight::BOLD)
-                                            .text_color(rgb(0xffffff))
+                                            .text_color(on_accent)
                                             .child(I18nKey::BtnChange.text()),
                                     )
                             })
@@ -553,6 +554,7 @@ impl SettingsPanel {
                 let text_2 = self.theme.text_2;
                 let text_3 = self.theme.text_3;
                 let accent = self.theme.accent;
+                let on_accent = self.theme.on_accent;
 
                 div()
                     .rounded(px(10.))
@@ -611,7 +613,7 @@ impl SettingsPanel {
                                             let btn_bg =
                                                 if selected { accent } else { rgba(0x00000000) };
                                             let btn_text =
-                                                if selected { rgb(0xffffff) } else { text_2 };
+                                                if selected { on_accent } else { text_2 };
                                             let btn_weight = if selected {
                                                 FontWeight::BOLD
                                             } else {
@@ -726,7 +728,7 @@ impl SettingsPanel {
                                         div()
                                             .text_size(px(11.))
                                             .font_weight(FontWeight::BOLD)
-                                            .text_color(rgb(0xffffff))
+                                            .text_color(on_accent)
                                             .child(I18nKey::BtnCleanupNow.text()),
                                     )
                             }),
@@ -979,6 +981,7 @@ impl SettingsPanel {
 
         let surface = self.theme.surface;
         let accent = self.theme.accent;
+        let on_accent = self.theme.on_accent;
         let accent_soft = self.theme.accent_soft;
         let text_1 = self.theme.text_1;
         let text_2 = self.theme.text_2;
@@ -1149,7 +1152,7 @@ impl SettingsPanel {
                                     .px(px(12.))
                                     .rounded(px(4.))
                                     .text_size(px(12.))
-                                    .text_color(rgb(0xffffff))
+                                    .text_color(on_accent)
                                     .bg(accent)
                                     .flex()
                                     .items_center()

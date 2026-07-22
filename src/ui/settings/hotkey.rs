@@ -506,7 +506,7 @@ impl SettingsPanel {
         let recording_btn_text = if recording {
             theme.accent
         } else {
-            rgb(0xffffff)
+            theme.on_accent
         };
         let desc_color = if recording {
             theme.accent

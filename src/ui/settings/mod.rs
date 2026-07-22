@@ -432,6 +432,7 @@ impl SettingsPanel {
         let surface = theme.surface;
         let divider = theme.divider;
         let accent = theme.accent;
+        let on_accent = theme.on_accent;
         let text_1 = theme.text_1;
         let text_3 = theme.text_3;
 
@@ -481,6 +482,7 @@ impl SettingsPanel {
                 ToggleColors {
                     accent,
                     track_off: divider,
+                    on_accent,
                 },
                 &mut self.toggle_states,
                 window,
@@ -531,6 +533,7 @@ impl SettingsPanel {
         let surface = theme.surface;
         let divider = theme.divider;
         let accent = theme.accent;
+        let on_accent = theme.on_accent;
         let text_1 = theme.text_1;
         let text_2 = theme.text_2;
         let text_3 = theme.text_3;
@@ -587,7 +590,7 @@ impl SettingsPanel {
                     .children(options.iter().map(|(key, display_label)| {
                         let selected = *key == active_key;
                         let btn_bg = if selected { accent } else { rgba(0x00000000) };
-                        let btn_text = if selected { rgb(0xffffff) } else { text_2 };
+                        let btn_text = if selected { on_accent } else { text_2 };
                         let btn_weight = if selected {
                             FontWeight::BOLD
                         } else {

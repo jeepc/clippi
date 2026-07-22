@@ -26,6 +26,8 @@ pub struct ClippiTheme {
     // --- Accent ---
     pub accent: Rgba,
     pub accent_soft: Rgba,
+    /// 叠在 `accent` 填充之上的前景色（文字 / 图标 / 开关旋钮）。
+    pub on_accent: Rgba,
 
     // --- Semantic ---
     pub fav_color: Rgba,
@@ -62,6 +64,7 @@ impl ClippiTheme {
 
             accent: rgb(0xcbc9c5),
             accent_soft: rgb(0x302e2a),
+            on_accent: rgb(0x1e1d1c),
 
             fav_color: rgb(0xd8a155),
             danger: rgb(0xff5f57),
@@ -94,6 +97,7 @@ impl ClippiTheme {
 
             accent: rgb(0x4a4b4d),
             accent_soft: rgb(0xe8e9ec),
+            on_accent: rgb(0xffffff),
 
             fav_color: rgb(0xd8a155),
             danger: rgb(0xff5f57),

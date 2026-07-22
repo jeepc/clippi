@@ -184,6 +184,7 @@ impl Render for EditPanel {
         let text_1 = theme.text_1;
         let text_2 = theme.text_2;
         let accent = theme.accent;
+        let on_accent = theme.on_accent;
         let hover_bg = if theme.is_dark {
             rgba(0xffffff10)
         } else {
@@ -470,7 +471,7 @@ impl Render for EditPanel {
                     ))
                     .child(text_button(
                         I18nKey::EditSave.text(),
-                        rgb(0xffffff),
+                        on_accent,
                         accent,
                         accent,
                         {

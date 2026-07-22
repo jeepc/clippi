@@ -646,7 +646,7 @@ impl Render for QuickPasteView {
                                     let key = entry.key.clone();
                                     let t = theme.clone();
                                     let app_state = self.state.clone();
-                                    let filter_text = if active { rgb(0xffffff) } else { t.text_2 };
+                                    let filter_text = if active { t.on_accent } else { t.text_2 };
                                     div()
                                         .h(px(22.0))
                                         .when(icon_only, |b| {
@@ -1078,7 +1078,7 @@ impl Render for QuickPasteView {
                                                     rgba(0x00000000)
                                                 })
                                                 .text_color(if selected {
-                                                    rgb(0xffffff)
+                                                    t.on_accent
                                                 } else {
                                                     t.text_2
                                                 })

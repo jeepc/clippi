@@ -822,6 +822,7 @@ impl RenderOnce for ClipboardCard {
         let surface = theme.surface;
         let divider = theme.divider;
         let accent = theme.accent;
+        let on_accent = theme.on_accent;
         let fav_color = theme.fav_color;
         let tag_bg = theme.tag_bg;
         let tag_text = theme.tag_text;
@@ -2150,7 +2151,7 @@ impl RenderOnce for ClipboardCard {
                         div()
                             .text_size(px(8.))
                             .font_weight(FontWeight::BOLD)
-                            .text_color(rgb(0xffffff))
+                            .text_color(on_accent)
                             .child(format!("{}", selection_order)),
                     ),
             )

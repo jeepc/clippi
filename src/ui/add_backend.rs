@@ -314,6 +314,7 @@ impl AddBackendPanel {
         let editing = self.edit_id.is_some();
         let accent = self.theme.accent;
         let accent_soft = self.theme.accent_soft;
+        let on_accent = self.theme.on_accent;
         let divider = self.theme.divider;
         let text_2 = self.theme.text_2;
         let text_1 = self.theme.text_1;
@@ -441,6 +442,7 @@ impl AddBackendPanel {
                     I18nKey::BackendAddTitle.text()
                 },
                 accent,
+                on_accent,
                 accent_soft,
                 {
                     let name_input = self.name_input.clone();
@@ -478,6 +480,7 @@ impl AddBackendPanel {
         let editing = self.edit_id.is_some();
         let accent = self.theme.accent;
         let accent_soft = self.theme.accent_soft;
+        let on_accent = self.theme.on_accent;
         let divider = self.theme.divider;
         let text_2 = self.theme.text_2;
         let _text_1 = self.theme.text_1;
@@ -549,6 +552,7 @@ impl AddBackendPanel {
                         I18nKey::BackendTest.text()
                     },
                     accent,
+                    on_accent,
                     accent_soft,
                     {
                         let this = this.clone();
@@ -568,6 +572,7 @@ impl AddBackendPanel {
                         I18nKey::BackendAddTitle.text()
                     },
                     rgb(0x4caf50),
+                    rgb(0xffffff),
                     accent_soft,
                     {
                         let name_input = self.name_input.clone();
@@ -878,6 +883,7 @@ fn type_card(
 fn primary_button(
     label: &'static str,
     color: Rgba,
+    text: Rgba,
     hover: Rgba,
     on_click: impl Fn(&mut Window, &mut App) + 'static,
 ) -> impl IntoElement {
@@ -887,7 +893,7 @@ fn primary_button(
         .bg(color)
         .text_size(px(12.))
         .font_weight(FontWeight::BOLD)
-        .text_color(rgb(0xffffff))
+        .text_color(text)
         .flex()
         .items_center()
         .justify_center()

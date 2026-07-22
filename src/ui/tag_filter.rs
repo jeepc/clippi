@@ -508,6 +508,7 @@ pub fn render_edit_panel(
 ) -> impl IntoElement {
     let is_dark = theme.is_dark;
     let accent = theme.accent;
+    let on_accent = theme.on_accent;
     let text_1 = theme.text_1;
     let text_2 = theme.text_2;
     let surface = theme.panel_surface;
@@ -663,7 +664,7 @@ pub fn render_edit_panel(
                         .hover(move |style| style.bg(accent_hover))
                         .text_size(px(11.))
                         .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(rgb(0xffffff))
+                        .text_color(on_accent)
                         .child(I18nKey::BackendSave.text())
                         .occlude()
                         .on_mouse_down(MouseButton::Left, {
