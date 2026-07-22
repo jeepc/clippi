@@ -3382,7 +3382,7 @@ impl WindowManager {
         let pending_phase = self.pending_update_phase.clone();
         std::thread::spawn(move || {
             let checker =
-                update::UpdateChecker::new(env!("CARGO_PKG_VERSION"), "Ruszero01", "clippi");
+                update::UpdateChecker::new(env!("CARGO_PKG_VERSION"), "jeepc", "clippi");
             let result = checker.check_full();
             match result {
                 Ok(Some(info)) => {

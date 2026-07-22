@@ -161,7 +161,7 @@ impl SettingsPanel {
                             .on_mouse_down(MouseButton::Left, |_ev, _window, _cx| {
                                 std::thread::spawn(|| {
                                     crate::services::update::open_releases_page(
-                                        "https://github.com/Ruszero01/clippi/releases",
+                                        "https://github.com/jeepc/clippi/releases",
                                     );
                                 });
                             })
