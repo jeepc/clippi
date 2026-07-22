@@ -587,6 +587,8 @@ impl WindowManager {
 
         // 7. Capture window geometry for persistence
         self.capture_window_geometry(cx);
+        #[cfg(target_os = "windows")]
+        self.reconcile_settings_visibility(cx);
         self.capture_settings_window_geometry(cx);
 
         // --- 8. Cloud sync ---
@@ -2099,6 +2101,9 @@ impl WindowManager {
             if hwnd.is_null() {
                 return;
             }
+            // Restore the taskbar button *before* showing — Windows evaluates
+            // WS_EX_TOOLWINDOW at the moment the window becomes visible.
+            self.set_settings_taskbar_hidden(false);
             // SAFETY: HWND is our own window. Show + restore (if minimised) +
             // bring to foreground so the user can type into settings inputs.
             unsafe {
@@ -2152,6 +2157,9 @@ impl WindowManager {
                         SWP_HIDEWINDOW | SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER,
                     );
                 }
+                // Now that it is hidden, take it back off the taskbar so a stray
+                // `ShowWindow` from gpui can't surface a button for it.
+                self.set_settings_taskbar_hidden(true);
             }
         }
         #[cfg(target_os = "macos")]
@@ -2513,11 +2521,70 @@ impl WindowManager {
     }
 
     /// Store the settings window's HWND. Unlike the quick popup, this window is
-    /// a normal activated window: no WS_EX_NOACTIVATE / WS_EX_TOOLWINDOW, so it
-    /// shows in the taskbar and Alt-Tab and takes focus when shown.
+    /// a normal activated window: no WS_EX_NOACTIVATE, so it shows in the
+    /// taskbar and Alt-Tab and takes focus when shown. It is created hidden, so
+    /// it starts out kept off the taskbar (see `set_settings_taskbar_hidden`).
     #[cfg(target_os = "windows")]
     pub fn set_settings_hwnd(&mut self, hwnd: isize) {
         self.settings_hwnd = hwnd;
+        self.set_settings_taskbar_hidden(true);
+    }
+
+    /// Keep / drop the settings window's taskbar button by flipping
+    /// WS_EX_TOOLWINDOW. Windows decides whether a window gets a button at the
+    /// moment it becomes visible, so we only ever flip this while the window is
+    /// hidden — the visible window always has its normal WS_EX_APPWINDOW frame.
+    ///
+    /// This exists because gpui's WM_DISPLAYCHANGE handler unconditionally calls
+    /// `ShowWindow(SW_SHOWNORMAL)` on any of its windows whose recorded HMONITOR
+    /// has disappeared — monitor sleep/wake, resolution change, dock/undock, RDP.
+    /// Without TOOLWINDOW that pops a stray "Clippi Settings" button into the
+    /// taskbar for a window the user never opened. See also
+    /// `reconcile_settings_visibility`, which hides the window again afterwards.
+    #[cfg(target_os = "windows")]
+    fn set_settings_taskbar_hidden(&self, hidden: bool) {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            GetWindowLongW, SetWindowLongW, GWL_EXSTYLE, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW,
+        };
+
+        let hwnd = self.settings_hwnd as *mut std::ffi::c_void;
+        if hwnd.is_null() {
+            return;
+        }
+        // Read-modify-write so we preserve whatever other extended styles gpui
+        // put on the window.
+        // SAFETY: HWND is our own window; `GetWindowLongW`/`SetWindowLongW` only
+        // read and write its extended style.
+        unsafe {
+            let cur = GetWindowLongW(hwnd, GWL_EXSTYLE);
+            let next = if hidden {
+                (cur & !(WS_EX_APPWINDOW as i32)) | WS_EX_TOOLWINDOW as i32
+            } else {
+                (cur & !(WS_EX_TOOLWINDOW as i32)) | WS_EX_APPWINDOW as i32
+            };
+            if next != cur {
+                SetWindowLongW(hwnd, GWL_EXSTYLE, next);
+            }
+        }
+    }
+
+    /// Re-hide the settings window if something outside our control made it
+    /// visible — gpui's WM_DISPLAYCHANGE handler does exactly that (see
+    /// `set_settings_taskbar_hidden`), which also leaves `settings_visible`
+    /// stale. Runs from the poll loop.
+    #[cfg(target_os = "windows")]
+    fn reconcile_settings_visibility(&mut self, cx: &mut Context<Self>) {
+        use windows_sys::Win32::UI::WindowsAndMessaging::IsWindowVisible;
+
+        if self.settings_visible || self.settings_hwnd == 0 {
+            return;
+        }
+        // SAFETY: settings HWND is our own window; read-only query.
+        if unsafe { IsWindowVisible(self.settings_hwnd as *mut std::ffi::c_void) } == 0 {
+            return;
+        }
+        log::debug!("settings window was shown externally (display change?) — re-hiding");
+        self.hide_settings_window(cx);
     }
 
     #[cfg(target_os = "macos")]
