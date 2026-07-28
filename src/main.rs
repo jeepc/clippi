@@ -481,6 +481,16 @@ fn main() {
                 {
                     let hide_taskbar = state.read(cx).settings.hide_taskbar_icon;
                     window_manager.update(cx, |wm, cx| {
+                        // On Windows, derive the style from both the setting and
+                        // the window's current visibility so a silent-start (hidden)
+                        // window is kept off the taskbar (WS_EX_TOOLWINDOW) and
+                        // gpui's WM_DISPLAYCHANGE force-show can't pop a stray button.
+                        #[cfg(target_os = "windows")]
+                        {
+                            let _ = hide_taskbar;
+                            wm.apply_main_taskbar_style(cx);
+                        }
+                        #[cfg(not(target_os = "windows"))]
                         wm.apply_taskbar_visibility(hide_taskbar, cx);
                     });
                 }

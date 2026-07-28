@@ -589,6 +589,8 @@ impl WindowManager {
         self.capture_window_geometry(cx);
         #[cfg(target_os = "windows")]
         self.reconcile_settings_visibility(cx);
+        #[cfg(target_os = "windows")]
+        self.reconcile_main_visibility(cx);
         self.capture_settings_window_geometry(cx);
 
         // --- 8. Cloud sync ---
@@ -1377,11 +1379,15 @@ impl WindowManager {
                 self.activate_macos_window();
             }
             self.visible = true;
+            #[cfg(target_os = "windows")]
+            self.apply_main_taskbar_style(cx);
             cx.notify();
             return;
         }
 
         self.visible = true;
+        #[cfg(target_os = "windows")]
+        self.apply_main_taskbar_style(cx);
         self.pinned = false;
         cx.emit(WindowManagerEvent::PinnedChanged(false));
 
@@ -1901,6 +1907,12 @@ impl WindowManager {
         }
 
         self.visible = false;
+
+        // Now hidden: keep the window off the taskbar (WS_EX_TOOLWINDOW) so
+        // gpui's WM_DISPLAYCHANGE force-show (see `reconcile_main_visibility`)
+        // can't pop a stray taskbar button.
+        #[cfg(target_os = "windows")]
+        self.apply_main_taskbar_style(cx);
     }
 
     fn show_quick_window(&mut self, cx: &mut Context<Self>) {
@@ -2587,6 +2599,60 @@ impl WindowManager {
         self.hide_settings_window(cx);
     }
 
+    /// Apply the main window's taskbar style from its current logical state:
+    /// hidden windows are kept off the taskbar (WS_EX_TOOLWINDOW), visible
+    /// windows honour the user's `hide_taskbar_icon` setting. Windows decides a
+    /// window's taskbar button the moment it becomes visible, so keeping a hidden
+    /// window TOOLWINDOW neutralises gpui's WM_DISPLAYCHANGE force-show. Delegates
+    /// to `apply_taskbar_visibility`, whose read-modify-write preserves the other
+    /// extended styles (WS_EX_NOACTIVATE / WS_EX_TOPMOST).
+    #[cfg(target_os = "windows")]
+    pub(crate) fn apply_main_taskbar_style(&self, cx: &mut Context<Self>) {
+        let hide = !self.visible || self.state.read(cx).settings.hide_taskbar_icon;
+        self.apply_taskbar_visibility(hide, cx);
+    }
+
+    /// Re-hide the main window if something outside our control made it visible.
+    /// gpui's WM_DISPLAYCHANGE handler calls `ShowWindow(SW_SHOWNORMAL)` on any of
+    /// its windows whose recorded HMONITOR disappeared (lock/unlock, monitor
+    /// sleep/wake, RDP, resolution change) — force-showing the hidden main window
+    /// and leaving `visible` stale. The window is already kept TOOLWINDOW while
+    /// hidden (see `apply_main_taskbar_style`) so no taskbar button appears; this
+    /// just returns the OS window to hidden. Runs from the poll loop. Mirrors
+    /// `reconcile_settings_visibility`.
+    #[cfg(target_os = "windows")]
+    fn reconcile_main_visibility(&mut self, _cx: &mut Context<Self>) {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            IsWindowVisible, SetWindowPos, SWP_HIDEWINDOW, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+            SWP_NOZORDER,
+        };
+
+        if self.visible || self.hwnd == 0 {
+            return;
+        }
+        let hwnd = self.hwnd as *mut std::ffi::c_void;
+        // SAFETY: main HWND is our own window; read-only query.
+        if unsafe { IsWindowVisible(hwnd) } == 0 {
+            return;
+        }
+        log::debug!("main window was shown externally (display change?) — re-hiding");
+        // Surgical OS-level re-hide only: the logical teardown (dismiss_ui /
+        // release_memory / leave_unfocused_mode / WindowHidden) already ran at the
+        // original `hide`, so we must not repeat it.
+        // SAFETY: HWND is our own window; the SWP_NO* flags mean this only hides it.
+        unsafe {
+            SetWindowPos(
+                hwnd,
+                std::ptr::null_mut(),
+                0,
+                0,
+                0,
+                0,
+                SWP_HIDEWINDOW | SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER,
+            );
+        }
+    }
+
     #[cfg(target_os = "macos")]
     pub fn set_settings_ns_window(&mut self, ns_window: isize) {
         // A standard macOS window — deliberately not styled like the floating
@@ -2878,6 +2944,15 @@ impl WindowManager {
 
     #[cfg(any(target_os = "windows", target_os = "macos"))]
     pub fn set_hide_taskbar_icon(&mut self, hide: bool, cx: &mut Context<Self>) {
+        // On Windows the style also depends on the window's current visibility
+        // (a hidden window stays TOOLWINDOW regardless of the setting), so derive
+        // it from the just-updated setting via `apply_main_taskbar_style`.
+        #[cfg(target_os = "windows")]
+        {
+            let _ = hide;
+            self.apply_main_taskbar_style(cx);
+        }
+        #[cfg(target_os = "macos")]
         self.apply_taskbar_visibility(hide, cx);
     }
 
