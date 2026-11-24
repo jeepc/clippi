@@ -574,7 +574,29 @@ fn main() {
                             raw_window_handle::HasWindowHandle::window_handle(quick_window)
                         {
                             if let RawWindowHandle::Win32(wh) = handle.as_raw() {
-                                quick_wm.update(cx, |wm, _cx| wm.set_quick_hwnd(wh.hwnd.get()));
+                                let quick_hwnd = wh.hwnd.get();
+                                quick_wm.update(cx, |wm, _cx| wm.set_quick_hwnd(quick_hwnd));
+
+                                // gpui creates the window at CW_USEDEFAULT and only
+                                // applies `window_bounds` when it shows the window
+                                // itself — which never happens here, the popup is
+                                // shown through SetWindowPos. Size it now so gpui's
+                                // WM_DISPLAYCHANGE force-show can't surface a
+                                // near-fullscreen, mostly transparent ghost window.
+                                let (anchor_x, anchor_y) =
+                                    platform::monitor::get_cursor_pos().unwrap_or((0, 0));
+                                let scale =
+                                    platform::monitor::get_scale_factor(anchor_x, anchor_y);
+                                cx.spawn(async move |_cx| {
+                                    // Yield so the open-window callback releases
+                                    // GPUI's AppCell borrow before the synchronous
+                                    // WM_SIZE callback fires from SetWindowPos.
+                                    Timer::after(std::time::Duration::from_millis(1)).await;
+                                    ui::window_manager::size_hidden_quick_window(
+                                        quick_hwnd, quick_h, scale,
+                                    );
+                                })
+                                .detach();
                             }
                         }
                     }

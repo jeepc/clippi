@@ -172,6 +172,47 @@ fn position_quick_window_windows(
     }
 }
 
+/// Give the freshly-created quick window its real size while it stays hidden.
+///
+/// gpui creates every window with `CW_USEDEFAULT` and only applies the requested
+/// `window_bounds` when *it* shows the window (`initial_placement`). Clippi shows
+/// the popup itself through `SetWindowPos`, so until the first quick-paste the
+/// HWND still carries the near-screen-sized default rect. gpui's
+/// `WM_DISPLAYCHANGE` handler force-shows hidden windows, which would then paint
+/// the 430×283 popup into the top-left corner of a huge, otherwise transparent
+/// window. Sizing it up front keeps such a stray frame harmless;
+/// `reconcile_quick_visibility` puts it back to hidden.
+#[cfg(target_os = "windows")]
+pub(crate) fn size_hidden_quick_window(hwnd: isize, quick_h: f32, scale: f32) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        SetWindowPos, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOZORDER,
+    };
+
+    let hwnd = hwnd as *mut std::ffi::c_void;
+    if hwnd.is_null() {
+        return;
+    }
+
+    let client_w = (QUICK_WINDOW_WIDTH * scale) as i32;
+    let client_h = (quick_h * scale) as i32;
+    let (win_w, win_h, _, _) = quick_outer_size_for_client(hwnd, client_w, client_h);
+
+    // Deliberately no SWP_SHOWWINDOW — the popup must stay hidden until the
+    // user asks for it; `show_quick_window` re-applies the exact geometry then.
+    // SAFETY: HWND is our own quick window; this only resizes it.
+    unsafe {
+        SetWindowPos(
+            hwnd,
+            std::ptr::null_mut(),
+            0,
+            0,
+            win_w,
+            win_h,
+            SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOZORDER,
+        );
+    }
+}
+
 /// Window subclass procedure that intercepts system behaviors while preserving
 /// manual resize. Only active when `BLOCK_SYSTEM_WINDOW_BEHAVIORS` is true.
 ///
@@ -591,6 +632,8 @@ impl WindowManager {
         self.reconcile_settings_visibility(cx);
         #[cfg(target_os = "windows")]
         self.reconcile_main_visibility(cx);
+        #[cfg(target_os = "windows")]
+        self.reconcile_quick_visibility(cx);
         self.capture_settings_window_geometry(cx);
 
         // --- 8. Cloud sync ---
@@ -2639,6 +2682,51 @@ impl WindowManager {
         // Surgical OS-level re-hide only: the logical teardown (dismiss_ui /
         // release_memory / leave_unfocused_mode / WindowHidden) already ran at the
         // original `hide`, so we must not repeat it.
+        // SAFETY: HWND is our own window; the SWP_NO* flags mean this only hides it.
+        unsafe {
+            SetWindowPos(
+                hwnd,
+                std::ptr::null_mut(),
+                0,
+                0,
+                0,
+                0,
+                SWP_HIDEWINDOW | SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER,
+            );
+        }
+    }
+
+    /// Re-hide the quick-paste popup if something outside our control made it
+    /// visible. Same cause as `reconcile_main_visibility`: gpui's
+    /// WM_DISPLAYCHANGE handler calls `ShowWindow(SW_SHOWNORMAL)` on any window
+    /// whose recorded HMONITOR disappeared (lock/unlock, monitor sleep/wake,
+    /// RDP, resolution change).
+    ///
+    /// The popup is the worst victim of that: it is a borderless
+    /// WS_EX_TOOLWINDOW with no titlebar and no taskbar button, and
+    /// `quick_visible` stays false, so none of the dismiss paths (Esc,
+    /// click-outside, hotkey toggle, focus loss) can reach it — the user cannot
+    /// close it. Runs from the poll loop.
+    #[cfg(target_os = "windows")]
+    fn reconcile_quick_visibility(&mut self, _cx: &mut Context<Self>) {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            IsWindowVisible, SetWindowPos, SWP_HIDEWINDOW, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+            SWP_NOZORDER,
+        };
+
+        if self.quick_visible || self.quick_hwnd == 0 {
+            return;
+        }
+        let hwnd = self.quick_hwnd as *mut std::ffi::c_void;
+        // SAFETY: quick HWND is our own window; read-only query.
+        if unsafe { IsWindowVisible(hwnd) } == 0 {
+            return;
+        }
+        // info!, unlike the main/settings twins: release builds log Info and up,
+        // and this is the one whose stray window the user cannot close by hand.
+        log::info!("quick window was shown externally (display change?) — re-hiding");
+        // OS-level re-hide only: the logical teardown already ran when the popup
+        // was dismissed, so `hide_quick_window` must not run a second time.
         // SAFETY: HWND is our own window; the SWP_NO* flags mean this only hides it.
         unsafe {
             SetWindowPos(

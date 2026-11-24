@@ -660,11 +660,21 @@ impl Render for RootView {
             0.0
         };
 
-        // --- Auto-focus and clear search bar when the window opens ---
+        // --- Auto-focus, clear search bar and favorites filter when the window opens ---
         if self.needs_auto_focus && is_clipboard {
             self.needs_auto_focus = false;
             let clear_search = self.state.read(cx).settings.clear_search_on_show;
+            let clear_favorites = self.state.read(cx).settings.clear_favorites_on_show;
             let auto_focus = self.state.read(cx).settings.auto_focus_search;
+            // --- Reset the favorites filter first so a following search reload sees it ---
+            if clear_favorites && self.state.read(cx).filters.is_favorites_active() {
+                let items = self.state.update(cx, |state, _cx| {
+                    state.toggle_favorites_filter();
+                    state.items.clone()
+                });
+                self.list_view.update(cx, |list, cx| list.set_items(items, cx));
+                self.titlebar.update(cx, |_titlebar, cx| cx.notify());
+            }
             if clear_search {
                 self.search_bar.update(cx, |bar, cx| {
                     bar.clear_text(window, cx);
